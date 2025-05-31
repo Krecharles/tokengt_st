@@ -63,3 +63,4 @@ target/
 maildir
 
 wandb/
+.vscode/

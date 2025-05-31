@@ -152,13 +152,13 @@ def main():
         "include_graph_token": True,
         "use_laplacian": True,
         "dropout": 0.1,
-        "epochs": 20,
+        "epochs": 200,
         "lr": 0.001
     }
 
     run = wandb.init(
         entity="krecharles-university-of-oxford",
-        project="TokenGT_ST",
+        project="TokenGT",
         config=config,
         # mode="disabled"
     )
@@ -169,16 +169,16 @@ def main():
     transform = Compose([AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
                          AddSubstructureInstances(substructures)])
 
-    train_dataset = ZINC(f"data/ZINC-lap-subs-{config.D_P}", subset=True,
+    train_dataset = ZINC(f"data/ZINC-lap-subs_size6-{config.D_P}", subset=True,
                          split="train", pre_transform=transform)
-    val_dataset = ZINC(f"data/ZINC-lap-subs-{config.D_P}", subset=True,
+    val_dataset = ZINC(f"data/ZINC-lap-subs_size6-{config.D_P}", subset=True,
                        split="val", pre_transform=transform)
 
     if torch.cuda.is_available():
         train_dataset.cuda()
         val_dataset.cuda()
 
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=128)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -197,8 +197,10 @@ def main():
         device=device,
         n_substructures=len(substructures)
     )
+
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Number of params: {num_params}")
+    print(f"n_substructures: {len(substructures)}")
     run.log({"num_param": num_params})
 
     criterion = nn.L1Loss(reduction="sum")

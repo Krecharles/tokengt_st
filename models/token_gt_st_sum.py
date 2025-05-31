@@ -23,6 +23,9 @@ class TokenGTST_Sum(TokenGT):
         self._type_id_enc = nn.Embedding(
             2+n_substructures, self._d, device=self._device)
 
+        # re-initialise parameters
+        self.apply(lambda m: self._init_params(m, self._num_encoder_layers))
+
     def forward(
         self,
         x: Tensor,
