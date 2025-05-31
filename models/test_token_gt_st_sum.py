@@ -8,11 +8,13 @@ from models.token_gt_st_sum import TokenGTST_Sum
 @pytest.mark.parametrize("include_graph_token", [True, False])
 @pytest.mark.parametrize("is_laplacian_node_ids", [True, False])
 @pytest.mark.parametrize("is_multiple_graph_input", [True, False])
+@pytest.mark.parametrize("no_substructure_instances", [True, False])
 def test_token_gt_st(
     dim_edge,
     include_graph_token,
     is_laplacian_node_ids,
     is_multiple_graph_input,
+    no_substructure_instances,
 ):
     dim_node, d_p = 10, 5
     x = torch.rand(5, dim_node)
@@ -24,12 +26,18 @@ def test_token_gt_st(
         ptr = torch.tensor([0, 2, 5])
         batch = torch.tensor([0, 0, 1, 1, 1])
         # 1 batch with 1 triangle with 0 instances and 1 batch with 1 trinagle with 1 instance of nodes 2, 3, 4
-        substructure_instances = [[[]], [[[0, 1, 2]]]]
+        if no_substructure_instances:
+            substructure_instances = [[[]], [[]]]
+        else:
+            substructure_instances = [[[]], [[[0, 1, 2]]]]
     else:
         ptr = torch.tensor([0, 5])
         batch = torch.tensor([0, 0, 0, 0, 0])
-        # 1 batch with 1 triangle with 1 instance of nodes 2, 3, 4
-        substructure_instances = [[[[2, 3, 4]]]]
+        if no_substructure_instances:
+            substructure_instances = [[[]]]
+        else:
+            # 1 batch with 1 triangle with 1 instance of nodes 2, 3, 4
+            substructure_instances = [[[[2, 3, 4]]]]
     node_ids = torch.rand(5, d_p)
 
     model = TokenGTST_Sum(

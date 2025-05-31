@@ -151,7 +151,7 @@ class TokenGTST_Sum(TokenGT):
         r"""adds projected node identifiers of all substructure involved nodes and 
         the type identifiers for the respective substructure
 
-        edge token embedding = sum(node_ids_prj) + type_ids for the substructure 
+        edge token embedding = node_ids_prj(sum node_ids) + type_ids for the substructure 
 
         Args:
             substructure_instances (List[List[List[List[int]]]]): 
@@ -186,8 +186,11 @@ class TokenGTST_Sum(TokenGT):
                         torch.concat((sub_nodes_sum, sub_nodes_sum), 0))
                     structural_tokens.append(node_ids_prj + type_id)
 
-        # [n_substructure_tokens, d]
-        return torch.stack(structural_tokens, dim=0)
+        if len(structural_tokens) == 0:
+            return torch.empty((0, self._d), device=self._device)
+        else:
+            # [n_substructure_tokens, d]
+            return torch.stack(structural_tokens, dim=0)
 
     @staticmethod
     @torch.no_grad()
@@ -212,7 +215,8 @@ class TokenGTST_Sum(TokenGT):
             graph_node_emb = node_emb[ptr[i]:ptr[i + 1]]
             graph_edge_emb = edge_emb[(edge_index[0] >= ptr[i])
                                       & (edge_index[0] < ptr[i + 1])]
-            graph_substructure_emb = substructure_emb[ptr_substructs[i]:ptr_substructs[i + 1]]
+            graph_substructure_emb = substructure_emb[ptr_substructs[i]
+                :ptr_substructs[i + 1]]
             unpadded_emb = torch.concat(
                 (graph_node_emb, graph_edge_emb, graph_substructure_emb), 0)
             pad = (0, 0, 0, max_tokens - n_tokens[i])
