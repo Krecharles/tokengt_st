@@ -18,7 +18,7 @@ import random
 import networkx as nx
 
 from models.add_substructure_instances import AddSubstructureInstances
-from models.token_gt_st import TokenGTST
+from models.token_gt_st_sum import TokenGTST_Sum
 
 
 class TokenGTGraphRegression(nn.Module):
@@ -38,7 +38,7 @@ class TokenGTGraphRegression(nn.Module):
         n_substructures
     ):
         super().__init__()
-        self._token_gt = TokenGTST(
+        self._token_gt = TokenGTST_Sum(
             dim_node=dim_node,
             d_p=d_p,
             d=d,
@@ -141,7 +141,7 @@ def main():
     # dropout=0.1
 
     config = {
-        "architecture": "TokenGTST",
+        "architecture": "TokenGTST_Sum",
         "dataset": "ZINC_12K",
         "D_P": 8,
         # "head_dim": 4,

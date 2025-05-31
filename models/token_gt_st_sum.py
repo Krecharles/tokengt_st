@@ -9,7 +9,7 @@ from torch import Tensor
 from torch_geometric.nn import TokenGT
 
 
-class TokenGTST(TokenGT):
+class TokenGTST_Sum(TokenGT):
     def __init__(
         self,
         *args,

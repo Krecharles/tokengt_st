@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from models.token_gt_st import TokenGTST
+from models.token_gt_st_sum import TokenGTST_Sum
 
 
 @pytest.mark.parametrize("dim_edge", [None, 16])
@@ -32,7 +32,7 @@ def test_token_gt_st(
         substructure_instances = [[[[2, 3, 4]]]]
     node_ids = torch.rand(5, d_p)
 
-    model = TokenGTST(
+    model = TokenGTST_Sum(
         dim_node=10,
         dim_edge=dim_edge,
         d_p=d_p,
@@ -45,7 +45,7 @@ def test_token_gt_st(
         n_substructures=1  # Just a triangle
     )
     model.reset_params()
-    assert str(model) == "TokenGTST(16)"
+    assert str(model) == "TokenGTST_Sum(16)"
 
     node_emb, graph_emb = model(
         x, edge_index, edge_attr, ptr, batch, node_ids, substructure_instances)
