@@ -171,7 +171,7 @@ def main():
     config = {
         "architecture": "TokenGT",  # TokenGTST_Sum, TokenGTST_Hyp, TokenGT
         "dataset": "ZINC_12K",
-        "experiment": "1k training samples",
+        "experiment": "",
         "D_P": 8,
         "num_heads": 4,
         "d": 64,
@@ -183,12 +183,13 @@ def main():
         "epochs": 200,
         "lr": 0.001,
         "train_batch_size": 32,
-        "substructures_file": "subs_size6"
+        "substructures_file": "subs_size6",
+        "train_ds_fraction": 0.5
     }
 
     run = wandb.init(
         entity="krecharles-university-of-oxford",
-        project="TokenGT",
+        project="TokenGTST_debug",
         config=config,
         # mode="disabled"
     )
@@ -197,6 +198,7 @@ def main():
 
     substructures = load_substructures(
         f"tokengt_zinc/{config.substructures_file}.pkl")
+
     transform = Compose([AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
                          AddSubstructureInstances(substructures)])
 
@@ -209,8 +211,13 @@ def main():
         train_dataset.cuda()
         val_dataset.cuda()
 
+    train_dataset = train_dataset[:int(
+        train_dataset.len() * config.train_ds_fraction)]
+
+    print(f"Training with {len(train_dataset)} samples")
+
     train_loader = DataLoader(
-        train_dataset[:1000], batch_size=config.train_batch_size, shuffle=True)
+        train_dataset, batch_size=config.train_batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=128)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -249,6 +256,9 @@ def main():
         val_loss = get_loss(model, val_loader, criterion)
         print(f"Epoch {i}: train_loss={train_loss:.5f} val_loss={val_loss:.5f}")
         run.log({"train_loss": train_loss, "val_loss": val_loss}, step=i)
+
+    save_path = f"trained_models/{config.architecture}_{config.dataset}_{config.substructures_file}.pt"
+    torch.save(model, save_path)
 
     run.finish()
 
