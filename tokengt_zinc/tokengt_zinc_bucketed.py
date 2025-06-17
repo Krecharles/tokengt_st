@@ -154,16 +154,16 @@ def main():
     config = {
         "architecture": "TokenGT",
         "dataset": "ZINC_12K",
+        "use_features": False,
         "D_P": 64,
-        # "head_dim": 4,
-        "num_heads": 16,
-        "d": 64,
-        "num_encoder_layers": 4,
-        "dim_feedforward": 64,
+        "num_heads": 8,
+        "d": 32,
+        "num_encoder_layers": 3,
+        "dim_feedforward": 32,
         "include_graph_token": True,
         "use_laplacian": False,
         "dropout": 0.1,
-        "epochs": 200,
+        "epochs": 30,
         "lr": 0.001,
         "train_batch_size": 32,
     }
@@ -172,7 +172,7 @@ def main():
         entity="krecharles-university-of-oxford",
         project="TokenGT",
         config=config,
-        mode="disabled"
+        # mode="disabled"
     )
 
     config = wandb.config
@@ -180,11 +180,20 @@ def main():
     transform = AddOrthonormalNodeIdentifiers(
         config.D_P, config.use_laplacian)
     path = osp.join(osp.realpath(os.getcwd()),
-                    "data", f"ZINC-ort-{config.D_P}")
+                    "data", f"ZINC-{config.use_laplacian}-{config.D_P}")
     # note: use pre_transform (avoid unnecessary duplicate eigenvector calculation)
     train_dataset = ZINC(path, subset=True, split="train",
                          pre_transform=transform)
     val_dataset = ZINC(path, subset=True, split="val", pre_transform=transform)
+
+    if not config.use_features:
+        train_dataset.data.x = torch.zeros(
+            train_dataset.data.num_nodes, 1)
+        val_dataset.data.x = torch.zeros(
+            val_dataset.data.num_nodes, 1)
+        train_dataset.data.edge_attr = torch.zeros(
+            train_dataset.data.num_edges)
+        val_dataset.data.edge_attr = torch.zeros(val_dataset.data.num_edges)
 
     if torch.cuda.is_available():
         train_dataset.cuda()
