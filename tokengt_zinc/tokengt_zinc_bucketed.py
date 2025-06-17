@@ -31,6 +31,7 @@ class TokenGTGraphRegression(nn.Module):
         device,
     ):
         super().__init__()
+        self.device = device
         self._token_gt = TokenGT(
             dim_node=dim_node,
             dim_edge=dim_edge,
@@ -60,6 +61,7 @@ def train(model, loader, criterion, optimizer):
     model.train()
     total_loss = 0.0
     for batch in loader:
+        batch = batch.to(model.device)
         optimizer.zero_grad()
         out = model(batch)
         loss = criterion(out, batch.y.unsqueeze(1))
@@ -74,6 +76,7 @@ def get_loss(model, loader, criterion) -> float:
     total_loss = 0.0
     with torch.no_grad():
         for batch in loader:
+            batch = batch.to(model.device)
             out = model(batch)
             loss = criterion(out, batch.y.unsqueeze(1)).item()
             total_loss += loss
@@ -172,7 +175,7 @@ def main():
         entity="krecharles-university-of-oxford",
         project="TokenGT",
         config=config,
-        # mode="disabled"
+        mode="disabled"
     )
 
     config = wandb.config
@@ -221,6 +224,7 @@ def main():
         dropout=config.dropout,
         device=device,
     )
+    model = model.to(device)
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Number of params: {num_params}")
     run.log({"num_param": num_params})
