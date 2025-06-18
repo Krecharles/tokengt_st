@@ -123,10 +123,10 @@ class TokenGTST_Sum(TokenGT):
         for b in substructure_instances:
             n_substruct_tokens.append(
                 sum([len(substructs) for substructs in b]))
-        n_substruct_tokens = torch.tensor(n_substruct_tokens)
+        n_substruct_tokens = torch.tensor(n_substruct_tokens, device=self._device)
 
         ptr_substructs = torch.cat(
-            [torch.tensor([0]), torch.cumsum(n_substruct_tokens, dim=0)])
+            [torch.tensor([0], device=self._device), torch.cumsum(n_substruct_tokens, dim=0)])
 
         n_tokens = n_nodes + n_edges + n_substruct_tokens
         batched_emb = self._get_batched_emb(
@@ -183,7 +183,7 @@ class TokenGTST_Sum(TokenGT):
                 type_id = self._type_id_enc.weight[2 + substruc_idx]
                 for instance_nodes in substruc:
                     # Adapt the instance_nodes to their offset in the batch.
-                    sub_nodes_sum = node_ids[torch.tensor(instance_nodes) +
+                    sub_nodes_sum = node_ids[torch.tensor(instance_nodes, device=node_ids.device) +
                                              ptr[b]].sum(dim=0)
                     node_ids_prj = self._node_id_enc(
                         torch.concat((sub_nodes_sum, sub_nodes_sum), 0))

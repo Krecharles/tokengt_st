@@ -5,6 +5,9 @@ from typing import Optional
 from torch_geometric.nn import TokenGT
 from models.token_gt_st_sum import TokenGTST_Sum
 from models.token_gt_st_hyp import TokenGTST_Hyp
+from torch_geometric.nn import GCNConv
+from torch_geometric.nn import global_mean_pool
+import torch.nn.functional as F
 
 
 class TokenGTGraphRegression(nn.Module):
@@ -140,3 +143,52 @@ class TokenGTSTHypGraphRegression(nn.Module):
                                       batch.node_ids,
                                       substructure_instances)
         return self.lm(graph_emb)
+
+
+class GCNGraphRegression(nn.Module):
+    """Graph Convolutional Network for graph regression."""
+
+    def __init__(
+        self,
+        dim_node,
+        hidden_channels,
+        num_layers,
+        dropout,
+        device,
+    ):
+        super().__init__()
+        self.num_layers = num_layers
+
+        self.conv1 = GCNConv(dim_node, hidden_channels)
+        self.convs = nn.ModuleList()
+        for i in range(num_layers - 1):
+            self.convs.append(
+                GCNConv(hidden_channels, hidden_channels))
+
+        self.lin1 = nn.Linear(hidden_channels, hidden_channels)
+        self.lin2 = nn.Linear(hidden_channels, 1)
+        self.dropout = dropout
+        
+        # Move model to device
+        self.to(device)
+        
+        print(
+            f"initialized GCN({num_layers} layers, {hidden_channels} hidden)")
+
+    def forward(self, batch):
+        x, edge_index, batch_idx = batch.x.float(), batch.edge_index, batch.batch
+
+        x = F.relu(self.conv1(x, edge_index))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+
+        for conv in self.convs:
+            x = F.relu(conv(x, edge_index))
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        x = global_mean_pool(x, batch_idx)
+
+        x = F.relu(self.lin1(x))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.lin2(x)
+
+        return x

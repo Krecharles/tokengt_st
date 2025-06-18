@@ -18,7 +18,7 @@ import random
 import networkx as nx
 
 from models.add_substructure_instances import AddSubstructureInstances
-from tokengt_experiments.exp_models import TokenGTGraphRegression, TokenGTSTSumGraphRegression, TokenGTSTHypGraphRegression
+from tokengt_experiments.exp_models import TokenGTGraphRegression, TokenGTSTSumGraphRegression, TokenGTSTHypGraphRegression, GCNGraphRegression
 
 
 def train(model, loader, criterion, optimizer):
@@ -27,10 +27,10 @@ def train(model, loader, criterion, optimizer):
     for batch in loader:
         optimizer.zero_grad()
 
-        if isinstance(model, TokenGTGraphRegression):
-            out = model(batch)
-        else:
+        if isinstance(model, (TokenGTSTSumGraphRegression, TokenGTSTHypGraphRegression)):
             out = model(batch, batch.substructure_instances)
+        else:
+            out = model(batch)
 
         loss = criterion(out, batch.y.unsqueeze(1))
         loss.backward()
@@ -44,10 +44,10 @@ def get_loss(model, loader, criterion) -> float:
     total_loss = 0.0
     with torch.no_grad():
         for batch in loader:
-            if isinstance(model, TokenGTGraphRegression):
-                out = model(batch)
-            else:
+            if isinstance(model, (TokenGTSTSumGraphRegression, TokenGTSTHypGraphRegression)):
                 out = model(batch, batch.substructure_instances)
+            else:
+                out = model(batch)
 
             loss = criterion(out, batch.y.unsqueeze(1)).item()
             total_loss += loss
@@ -111,40 +111,48 @@ def create_model(config, train_dataset, device, n_substructures):
             device=device,
             n_substructures=n_substructures
         )
+    elif config.architecture == "GCN":
+        return GCNGraphRegression(
+            dim_node=train_dataset.num_node_features,
+            hidden_channels=config.d,
+            num_layers=config.num_encoder_layers,
+            dropout=config.dropout,
+            device=device,
+        )
     else:
         raise ValueError(f"Unknown architecture: {config.architecture}")
 
 
 def main():
-    torch.manual_seed(42)
-    np.random.seed(42)
-    random.seed(42)
-    torch.cuda.manual_seed_all(42)
-    torch.backends.cudnn.deterministic = True
+    # torch.manual_seed(42)
+    # np.random.seed(42)
+    # random.seed(42)
+    # torch.cuda.manual_seed_all(42)
+    # torch.backends.cudnn.deterministic = True
 
     config = {
         "architecture": "TokenGT",
         "dataset": "ZINC_12K",
-        "use_features": False,
+        "use_features": True,
         "D_P": 64,
-        "num_heads": 16,
-        "d": 64,
-        "num_encoder_layers": 4,
-        "dim_feedforward": 64,
+        "num_heads": 8,
+        "d": 32,
+        "num_encoder_layers": 3,
+        "dim_feedforward": 32,
         "include_graph_token": True,
         "use_laplacian": False,
         "dropout": 0.1,
-        "epochs": 500,
+        "epochs": 200,
         "lr": 0.001,
-        "train_batch_size": 32,
+        "batch_size": 128,
         "substructures_file": "subs_size6",
     }
 
     run = wandb.init(
         entity="krecharles-university-of-oxford",
-        project="TokenGTST_debug",
+        project="TokenGTST",
         config=config,
-        mode="disabled"
+        # mode="disabled"
     )
 
     config = wandb.config
@@ -180,8 +188,8 @@ def main():
     print(f"Training with {len(train_dataset)} samples")
 
     train_loader = DataLoader(
-        train_dataset, batch_size=config.train_batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=128)
+        train_dataset, batch_size=config.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
