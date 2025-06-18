@@ -8,53 +8,13 @@ from torch import Tensor
 
 from torch_geometric.datasets import ZINC
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import TokenGT
 from torch_geometric.transforms import AddOrthonormalNodeIdentifiers
 
 import numpy as np
 import wandb
 import random
 
-
-class TokenGTGraphRegression(nn.Module):
-    def __init__(
-        self,
-        dim_node,
-        d_p,
-        d,
-        num_heads,
-        num_encoder_layers,
-        dim_feedforward,
-        include_graph_token,
-        is_laplacian_node_ids,
-        dim_edge,
-        dropout,
-        device,
-    ):
-        super().__init__()
-        self._token_gt = TokenGT(
-            dim_node=dim_node,
-            dim_edge=dim_edge,
-            d_p=d_p,
-            d=d,
-            num_heads=num_heads,
-            num_encoder_layers=num_encoder_layers,
-            dim_feedforward=dim_feedforward,
-            is_laplacian_node_ids=is_laplacian_node_ids,
-            include_graph_token=include_graph_token,
-            dropout=dropout,
-            device=device,
-        )
-        self.lm = nn.Linear(d, 1, device=device)
-
-    def forward(self, batch):
-        _, graph_emb = self._token_gt(batch.x.float(),
-                                      batch.edge_index,
-                                      batch.edge_attr.unsqueeze(1).float(),
-                                      batch.ptr,
-                                      batch.batch,
-                                      batch.node_ids)
-        return self.lm(graph_emb)
+from tokengt_experiments.exp_models import TokenGTGraphRegression
 
 
 def train(model, loader, criterion, optimizer):
@@ -104,7 +64,6 @@ def main():
         "architecture": "TokenGT",
         "dataset": "ZINC_12K",
         "D_P": 64,
-        # "head_dim": 4,
         "num_heads": 16,
         "d": 64,
         "num_encoder_layers": 4,
@@ -121,7 +80,7 @@ def main():
         entity="krecharles-university-of-oxford",
         project="TokenGT",
         config=config,
-        # mode="disabled"
+        mode="disabled"
     )
 
     config = wandb.config

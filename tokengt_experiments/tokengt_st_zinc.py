@@ -9,7 +9,6 @@ from torch import Tensor
 
 from torch_geometric.datasets import ZINC
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn.models.token_gt import TokenGT
 from torch_geometric.transforms import AddOrthonormalNodeIdentifiers
 
 import numpy as np
@@ -19,95 +18,7 @@ import random
 import networkx as nx
 
 from models.add_substructure_instances import AddSubstructureInstances
-from models.token_gt_st_hyp import TokenGTST_Hyp
-from models.token_gt_st_sum import TokenGTST_Sum
-
-
-class TokenGTGraphRegression(nn.Module):
-    def __init__(
-        self,
-        architecture,
-        dim_node,
-        d_p,
-        d,
-        num_heads,
-        num_encoder_layers,
-        dim_feedforward,
-        include_graph_token,
-        is_laplacian_node_ids,
-        dim_edge,
-        dropout,
-        device,
-        n_substructures
-    ):
-        super().__init__()
-        self.architecture = architecture
-        if architecture == "TokenGTST_Sum":
-            self._token_gt = TokenGTST_Sum(
-                dim_node=dim_node,
-                d_p=d_p,
-                d=d,
-                num_heads=num_heads,
-                num_encoder_layers=num_encoder_layers,
-                dim_feedforward=dim_feedforward,
-                dim_edge=dim_edge,
-                is_laplacian_node_ids=is_laplacian_node_ids,
-                include_graph_token=include_graph_token,
-                dropout=dropout,
-                device=device,
-                n_substructures=n_substructures
-            )
-            print(f"initialized TokenGTST_Sum({n_substructures})")
-        elif architecture == "TokenGTST_Hyp":
-            self._token_gt = TokenGTST_Hyp(
-                dim_node=dim_node,
-                d_p=d_p,
-                d=d,
-                num_heads=num_heads,
-                num_encoder_layers=num_encoder_layers,
-                dim_feedforward=dim_feedforward,
-                dim_edge=dim_edge,
-                is_laplacian_node_ids=is_laplacian_node_ids,
-                include_graph_token=include_graph_token,
-                dropout=dropout,
-                device=device,
-                n_substructures=n_substructures
-            )
-            print(f"initialized TokenGTST_Hyp({n_substructures})")
-        elif architecture == "TokenGT":
-            self._token_gt = TokenGT(
-                dim_node=dim_node,
-                d_p=d_p,
-                d=d,
-                num_heads=num_heads,
-                num_encoder_layers=num_encoder_layers,
-                dim_feedforward=dim_feedforward,
-                dim_edge=dim_edge,
-                is_laplacian_node_ids=is_laplacian_node_ids,
-                include_graph_token=include_graph_token,
-                dropout=dropout,
-                device=device,
-            )
-            print("initialized TokenGT")
-        self.lm = nn.Linear(d, 1, device=device)
-
-    def forward(
-        self,
-        x: Tensor,
-        edge_index: Tensor,
-        edge_attr: Optional[Tensor],
-        ptr: Tensor,
-        batch: Tensor,
-        node_ids: Tensor,
-        substructure_instances: list[list[list[int]]],
-    ):
-        if self.architecture == "TokenGT":
-            _, graph_emb = self._token_gt(x, edge_index, edge_attr, ptr, batch,
-                                          node_ids)
-        else:
-            _, graph_emb = self._token_gt(x, edge_index, edge_attr, ptr, batch,
-                                          node_ids, substructure_instances)
-        return self.lm(graph_emb)
+from tokengt_experiments.exp_models import TokenGTGraphRegression, TokenGTSTSumGraphRegression, TokenGTSTHypGraphRegression
 
 
 def train(model, loader, criterion, optimizer):
@@ -115,15 +26,12 @@ def train(model, loader, criterion, optimizer):
     total_loss = 0.0
     for batch in loader:
         optimizer.zero_grad()
-        out = model(
-            batch.x.float(),
-            batch.edge_index,
-            batch.edge_attr.unsqueeze(1).float(),
-            batch.ptr,
-            batch.batch,
-            batch.node_ids,
-            batch.substructure_instances
-        )
+
+        if isinstance(model, TokenGTGraphRegression):
+            out = model(batch)
+        else:
+            out = model(batch, batch.substructure_instances)
+
         loss = criterion(out, batch.y.unsqueeze(1))
         loss.backward()
         optimizer.step()
@@ -136,15 +44,11 @@ def get_loss(model, loader, criterion) -> float:
     total_loss = 0.0
     with torch.no_grad():
         for batch in loader:
-            out = model(
-                batch.x.float(),
-                batch.edge_index,
-                batch.edge_attr.unsqueeze(1).float(),
-                batch.ptr,
-                batch.batch,
-                batch.node_ids,
-                batch.substructure_instances
-            )
+            if isinstance(model, TokenGTGraphRegression):
+                out = model(batch)
+            else:
+                out = model(batch, batch.substructure_instances)
+
             loss = criterion(out, batch.y.unsqueeze(1)).item()
             total_loss += loss
     return total_loss / len(loader.dataset)
@@ -161,6 +65,56 @@ def load_substructures(filepath: str):
         return out
 
 
+def create_model(config, train_dataset, device, n_substructures):
+    """Create model based on architecture type."""
+    if config.architecture == "TokenGT":
+        return TokenGTGraphRegression(
+            dim_node=train_dataset.num_node_features,
+            d_p=config.D_P,
+            d=config.d,
+            num_heads=config.num_heads,
+            num_encoder_layers=config.num_encoder_layers,
+            dim_feedforward=config.dim_feedforward,
+            include_graph_token=config.include_graph_token,
+            is_laplacian_node_ids=config.use_laplacian,
+            dim_edge=train_dataset.num_edge_features,
+            dropout=config.dropout,
+            device=device,
+        )
+    elif config.architecture == "TokenGTST_Sum":
+        return TokenGTSTSumGraphRegression(
+            dim_node=train_dataset.num_node_features,
+            d_p=config.D_P,
+            d=config.d,
+            num_heads=config.num_heads,
+            num_encoder_layers=config.num_encoder_layers,
+            dim_feedforward=config.dim_feedforward,
+            include_graph_token=config.include_graph_token,
+            is_laplacian_node_ids=config.use_laplacian,
+            dim_edge=train_dataset.num_edge_features,
+            dropout=config.dropout,
+            device=device,
+            n_substructures=n_substructures
+        )
+    elif config.architecture == "TokenGTST_Hyp":
+        return TokenGTSTHypGraphRegression(
+            dim_node=train_dataset.num_node_features,
+            d_p=config.D_P,
+            d=config.d,
+            num_heads=config.num_heads,
+            num_encoder_layers=config.num_encoder_layers,
+            dim_feedforward=config.dim_feedforward,
+            include_graph_token=config.include_graph_token,
+            is_laplacian_node_ids=config.use_laplacian,
+            dim_edge=train_dataset.num_edge_features,
+            dropout=config.dropout,
+            device=device,
+            n_substructures=n_substructures
+        )
+    else:
+        raise ValueError(f"Unknown architecture: {config.architecture}")
+
+
 def main():
     torch.manual_seed(42)
     np.random.seed(42)
@@ -169,35 +123,34 @@ def main():
     torch.backends.cudnn.deterministic = True
 
     config = {
-        "architecture": "TokenGT",  # TokenGTST_Sum, TokenGTST_Hyp, TokenGT
+        "architecture": "TokenGT",
         "dataset": "ZINC_12K",
-        "experiment": "",
-        "D_P": 8,
-        "num_heads": 4,
+        "use_features": False,
+        "D_P": 64,
+        "num_heads": 16,
         "d": 64,
-        "num_encoder_layers": 2,
-        "dim_feedforward": 128,
+        "num_encoder_layers": 4,
+        "dim_feedforward": 64,
         "include_graph_token": True,
-        "use_laplacian": True,
+        "use_laplacian": False,
         "dropout": 0.1,
-        "epochs": 200,
+        "epochs": 500,
         "lr": 0.001,
         "train_batch_size": 32,
         "substructures_file": "subs_size6",
-        "train_ds_fraction": 0.5
     }
 
     run = wandb.init(
         entity="krecharles-university-of-oxford",
         project="TokenGTST_debug",
         config=config,
-        # mode="disabled"
+        mode="disabled"
     )
 
     config = wandb.config
 
     substructures = load_substructures(
-        f"tokengt_zinc/{config.substructures_file}.pkl")
+        f"tokengt_experiments/{config.substructures_file}.pkl")
 
     transform = Compose([AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
                          AddSubstructureInstances(substructures)])
@@ -207,12 +160,22 @@ def main():
     val_dataset = ZINC(f"data/ZINC-lap-{config.substructures_file}-{config.D_P}", subset=True,
                        split="val", pre_transform=transform)
 
+    if not config.use_features:
+        train_dataset.data.x = torch.zeros(
+            train_dataset.data.num_nodes, 1)
+        val_dataset.data.x = torch.zeros(
+            val_dataset.data.num_nodes, 1)
+        train_dataset.data.edge_attr = torch.zeros(
+            train_dataset.data.num_edges)
+        val_dataset.data.edge_attr = torch.zeros(val_dataset.data.num_edges)
+        assert train_dataset.data.x[0] == 0
+        assert val_dataset.data.x[0] == 0
+        assert train_dataset.data.edge_attr[0] == 0
+        assert val_dataset.data.edge_attr[0] == 0
+
     if torch.cuda.is_available():
         train_dataset.cuda()
         val_dataset.cuda()
-
-    train_dataset = train_dataset[:int(
-        train_dataset.len() * config.train_ds_fraction)]
 
     print(f"Training with {len(train_dataset)} samples")
 
@@ -222,21 +185,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = TokenGTGraphRegression(
-        architecture=config.architecture,
-        dim_node=train_dataset.num_node_features,
-        d_p=config.D_P,
-        d=config.d,
-        num_heads=config.num_heads,
-        num_encoder_layers=config.num_encoder_layers,
-        dim_feedforward=config.dim_feedforward,
-        include_graph_token=config.include_graph_token,
-        is_laplacian_node_ids=config.use_laplacian,
-        dim_edge=train_dataset.num_edge_features,
-        dropout=config.dropout,
-        device=device,
-        n_substructures=len(substructures)
-    )
+    model = create_model(config, train_dataset, device, len(substructures))
 
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Number of params: {num_params}")
