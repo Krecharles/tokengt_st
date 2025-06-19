@@ -3,6 +3,7 @@
 python -m tokengt_experiments.pcqm4m_ogb_tokengt \
     --model token_gt \
     --log_dir pcqm4m/logs \
+    --checkpoint_dir pcqm4m/checkpoints \
     --num_devices 0 \
     --initial_lr 0.001 \
     --lr_reduce_factor 0.5 \
@@ -16,4 +17,5 @@ python -m tokengt_experiments.pcqm4m_ogb_tokengt \
     --num_encoder_layers 2 \
     --dim_feedforward 128 \
     --dropout_ratio 0.1 \
-    --include_graph_token
+    --include_graph_token \
+    --on_disk_dataset

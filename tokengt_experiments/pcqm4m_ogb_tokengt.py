@@ -31,6 +31,7 @@ from torch_geometric.nn import (
 )
 from torch_geometric.utils import degree
 import wandb
+import torch.optim.lr_scheduler as lr_scheduler
 
 try:
     from ogb.lsc import PCQM4Mv2Evaluator, PygPCQM4Mv2Dataset
@@ -100,8 +101,6 @@ def train(model, rank, device, loader, optimizer):
     reg_criterion = torch.nn.L1Loss()
     loss_accum = 0.0
 
-    print(f"train_size = {len(loader.dataset)}")
-
     for step, batch in enumerate(
             tqdm(loader, desc="Training", disable=(rank > 0))):
         batch = batch.to(device)
@@ -109,6 +108,7 @@ def train(model, rank, device, loader, optimizer):
         optimizer.zero_grad()
         loss = reg_criterion(pred, batch.y)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
         loss_accum += loss.detach().cpu().item()
     return loss_accum / (step + 1)
@@ -153,7 +153,7 @@ def run(rank, dataset, args):
         project="PCQM4M_TokenGT",
         config=vars(args),
         sync_tensorboard=True,
-        mode="disabled"
+        # mode="disabled"
     )
 
     num_devices = args.num_devices
@@ -185,15 +185,20 @@ def run(rank, dataset, args):
     )
 
     if rank == 0:
+        transform = AddOrthonormalNodeIdentifiers(args.D_P, args.use_laplacian) 
+        root_f = f'/mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
         if args.on_disk_dataset:
-            valid_dataset = PCQM4Mv2(root='on_disk_dataset/', split="val",
-                                     from_smiles=ogb_from_smiles_wrapper)
+            valid_dataset = PCQM4Mv2(root=root_f, split="val",
+                                     from_smiles=ogb_from_smiles_wrapper,
+                                     transform=transform)
             test_dev_dataset = PCQM4Mv2(
-                root='on_disk_dataset/', split="test",
-                from_smiles=ogb_from_smiles_wrapper)
+                root=root_f, split="test",
+                from_smiles=ogb_from_smiles_wrapper,
+                transform=transform)
             test_challenge_dataset = PCQM4Mv2(
-                root='on_disk_dataset/', split="holdout",
-                from_smiles=ogb_from_smiles_wrapper)
+                root=root_f, split="holdout",
+                from_smiles=ogb_from_smiles_wrapper,
+                transform=transform)
         else:
             valid_dataset = dataset[split_idx["valid"]]
             test_dev_dataset = dataset[split_idx["test-dev"]]
@@ -237,18 +242,27 @@ def run(rank, dataset, args):
         dropout=args.dropout_ratio,
         device=device,
     )
+
+    print(f"number of parameters: {sum(p.numel() for p in model.parameters())}")
+    wandb.log({"number of parameters": sum(p.numel() for p in model.parameters())})
+
     if num_devices > 0:
         model = model.to(rank)
     if num_devices > 1:
         model = DistributedDataParallel(model, device_ids=[rank])
 
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=1e-8, weight_decay=args.weight_decay)
 
     if args.log_dir != '':
         writer = SummaryWriter(log_dir=args.log_dir)
 
     best_valid_mae = 1000
-    scheduler = StepLR(optimizer, step_size=30, gamma=0.25)
+    # Scheduler: linear warmup to 0.0002, then linear decay to 0
+    scheduler1 = lr_scheduler.LinearLR(optimizer, start_factor=0.000001, end_factor=args.lr, total_iters=args.warmup_iterations)
+    scheduler2 = lr_scheduler.LinearLR(optimizer, start_factor=args.lr, end_factor=0.0, total_iters=args.iterations-args.warmup_iterations)
+
+    # TODO replace 0 with args.warmup_iterations
+    scheduler = lr_scheduler.SequentialLR(optimizer, schedulers=[scheduler1, scheduler2], milestones=[0])
 
     current_epoch = 1
 
@@ -317,10 +331,13 @@ def run(rank, dataset, args):
         if num_devices > 1:
             dist.barrier()
 
-        scheduler.step()
-
-    if rank == 0 and args.log_dir != '':
-        writer.close()
+        if rank == 0:
+            scheduler.step()
+        if num_devices > 1:
+            dist.barrier()
+        
+        if rank == 0 and args.log_dir != '':
+            writer.close()
 
 
 if __name__ == "__main__":
@@ -346,11 +363,10 @@ if __name__ == "__main__":
                         help="Number of GPUs, if 0 runs on the CPU")
     parser.add_argument('--on_disk_dataset', action='store_true')
 
-    parser.add_argument('--initial_lr', type=float, default=0.001)
-    parser.add_argument('--lr_reduce_factor', type=float, default=0.5)
-    parser.add_argument('--minimum_lr', type=float, default=1e-5)
-    parser.add_argument('--patience', type=int, default=10,
-                        help='Epochs to wait before reducing LR')
+    parser.add_argument('--lr', type=float, default=0.0002)
+    parser.add_argument('--iterations', type=int, default=100)
+    parser.add_argument('--warmup_iterations', type=int, default=16)
+    parser.add_argument('--weight_decay', type=float, default=0.0)
 
     parser.add_argument('--use_laplacian', action='store_true')
     parser.add_argument('--D_P', type=int, default=16,
@@ -381,13 +397,15 @@ if __name__ == "__main__":
     transform = AddOrthonormalNodeIdentifiers(
         args.D_P, args.use_laplacian)
     if args.on_disk_dataset:
-        root_f = f'on_disk_dataset/pyqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
+        root_f = f'/mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
         dataset = PCQM4Mv2(root=root_f, split='train',
                            from_smiles=ogb_from_smiles_wrapper,
                            transform=transform)
     else:
-        dataset = PygPCQM4Mv2Dataset(root='dataset/', transform=transform)
+        dataset = PygPCQM4Mv2Dataset(root='/mnt/data/', transform=transform)
 
+    # TODO: remove this
+    dataset = dataset.shuffle()[:int(len(dataset)*0.02)]
     print(f"dataset size: {len(dataset)}")
 
     if args.num_devices > 1:
