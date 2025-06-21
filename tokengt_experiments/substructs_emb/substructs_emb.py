@@ -11,6 +11,8 @@ from torch_geometric.datasets import ZINC
 from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import AddOrthonormalNodeIdentifiers
 from torch_geometric.transforms.compose import Compose
+from torch_geometric.transforms import BaseTransform
+from torch_geometric.data import Data
 
 import numpy as np
 import wandb
@@ -24,10 +26,26 @@ from tokengt_experiments.exp_models import (
     MPNNGraphRegression
 )
 
-def train(model, loader, criterion, optimizer):
+
+class AddSubstructureEmbeddings(BaseTransform):
+    
+    def forward(self, data) -> Data:
+        flat = list(chain.from_iterable(chain.from_iterable(data.substructure_instances)))
+        counts = torch.bincount(torch.tensor(flat, dtype=torch.long))
+        # expand counts to include nodes not in data.substructure_instances
+        counts = torch.cat([counts, torch.zeros(data.x.shape[0] - len(counts))])
+        
+        data.x = torch.cat([data.x, counts.unsqueeze(1)], dim=1)
+        data.edge_attr = None
+        
+        return data
+
+
+def train(model, loader, criterion, optimizer, device):
     model.train()
     total_loss = 0.0
     for batch in loader:
+        batch = batch.to(device)
         optimizer.zero_grad()
         out = model(batch)
         loss = criterion(out, batch.y.unsqueeze(1))
@@ -37,11 +55,12 @@ def train(model, loader, criterion, optimizer):
     return total_loss / len(loader.dataset)
 
 
-def get_loss(model, loader, criterion) -> float:
+def get_loss(model, loader, criterion, device) -> float:
     model.eval()
     total_loss = 0.0
     with torch.no_grad():
         for batch in loader:
+            batch = batch.to(device)
             out = model(batch)
             loss = criterion(out, batch.y.unsqueeze(1)).item()
             total_loss += loss
@@ -68,6 +87,7 @@ def create_model(config, device, dim_node):
             hidden_channels=config.d,
             num_layers=config.num_encoder_layers,
             dropout=config.dropout,
+            batch_norm=config.batch_norm,
             device=device,
         )
     elif config.architecture == "MPNN":
@@ -94,60 +114,50 @@ def load_substructures(filepath: str):
             out.append(G)
         return out
 
-def process_dataset(dataset):
-    for data in dataset:
-        # append substructure embeddings to node features
-        flat = list(chain.from_iterable(chain.from_iterable(data.substructure_instances)))
-        counts = torch.bincount(torch.tensor(flat, dtype=torch.long))
-        # expand counts to include nodes not in data.substructure_instances
-        counts = torch.cat([counts, torch.zeros(data.x.shape[0] - len(counts))])
-        data.x = torch.cat([data.x, counts.unsqueeze(1)], dim=1)
-        # remove edge attributes paper does so
-        data.edge_attr = None
-
 def main(config):
-    torch.manual_seed(42)
-    np.random.seed(42)
-    random.seed(42)
-    torch.cuda.manual_seed_all(42)
-    torch.backends.cudnn.deterministic = True
+    # torch.manual_seed(42)
+    # np.random.seed(42)
+    # random.seed(42)
+    # torch.cuda.manual_seed_all(42)
+    # torch.backends.cudnn.deterministic = True
 
     run = wandb.init(
         entity="krecharles-university-of-oxford",
         project="substructure_embeddings",
         config=config,
-        # mode="disabled"
+        mode="disabled"
     )
 
     config = wandb.config
 
-    if config.substructure_file == "":
+    if config.substructures_file == "":
         substructures = []
     else:
-        substructures = load_substructures(config.substructure_file)
-    transform = Compose([AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
-                        AddSubstructureInstances(substructures)])
+        substructures = load_substructures(f"tokengt_experiments/{config.substructures_file}.pkl")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    transform = Compose([
+        AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
+        AddSubstructureInstances(substructures),
+        AddSubstructureEmbeddings()
+    ])
 
     path = osp.join(osp.realpath(os.getcwd()),
-                    "data", f"ZINC-{config.use_laplacian}-{config.D_P}")
+                    "data", f"ZINC-{config.use_laplacian}-{config.D_P}-{config.substructures_file}")
     
     train_dataset = ZINC(path, subset=True, split="train",
                          pre_transform=transform)
     val_dataset = ZINC(path, subset=True, split="val", pre_transform=transform)
     test_dataset = ZINC(path, subset=True, split="test", pre_transform=transform)
 
-    process_dataset(train_dataset)
-    process_dataset(val_dataset)
-    process_dataset(test_dataset)
-
     train_loader = DataLoader(
         train_dataset, batch_size=config.batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=config.batch_size)
     test_loader = DataLoader(test_dataset, batch_size=config.batch_size)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     model = create_model(config, device, train_dataset.num_node_features)
+    model.to(device)
 
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Number of params: {num_params}")
@@ -155,7 +165,7 @@ def main(config):
     run.log({"num_param": num_params})
 
     criterion = nn.L1Loss(reduction="sum")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
     
     scheduler = ReduceLROnPlateau(
         optimizer, 
@@ -165,17 +175,14 @@ def main(config):
         patience=config.patience,
     )
 
-    train_loss = get_loss(model, train_loader, criterion)
-    val_loss = get_loss(model, val_loader, criterion)
+    train_loss = get_loss(model, train_loader, criterion, device)
+    val_loss = get_loss(model, val_loader, criterion, device)
     print(f"Epoch 0: train_loss={train_loss:.5f} val_loss={val_loss:.5f}")
     run.log({"train_loss": train_loss, "val_loss": val_loss}, step=1)
-    
-    best_val_loss = val_loss
-    patience_counter = 0
 
     for i in range(2, config.epochs + 2):
-        train_loss = train(model, train_loader, criterion, optimizer)
-        val_loss = get_loss(model, val_loader, criterion)
+        train_loss = train(model, train_loader, criterion, optimizer, device)
+        val_loss = get_loss(model, val_loader, criterion, device)
         
         scheduler.step(val_loss)
         current_lr = optimizer.param_groups[0]['lr']
@@ -187,7 +194,7 @@ def main(config):
             "learning_rate": current_lr
         }, step=i)
 
-    test_loss = get_loss(model, test_loader, criterion)
+    test_loss = get_loss(model, test_loader, criterion, device)
     print(f"Test loss: {test_loss:.5f}")
     run.log({"test_loss": test_loss})
 
@@ -199,7 +206,7 @@ if __name__ == "__main__":
         "architecture": "GCN",  # Options: "TokenGT", "GCN", "MPNN"
         "dataset": "ZINC_12K", 
         # set substructure_file to "" to use no substructures
-        "substructure_file": "",
+        "substructures_file": "subs_size6",
         "D_P": 32,
         "num_heads": 8,
         "d": 125,
@@ -207,8 +214,9 @@ if __name__ == "__main__":
         "dim_feedforward": 64,
         "include_graph_token": True,
         "use_laplacian": False,
+        "batch_norm": True,
         "dropout": 0,
-        "epochs": 1000,
+        "epochs": 250,
         "lr": 0.001,
         "lr_reduce_factor": 0.5,
         "min_lr": 0.00001,

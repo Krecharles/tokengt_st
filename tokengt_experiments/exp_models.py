@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, scatter
 from typing import Optional
 from torch_geometric.nn import TokenGT
 from models.token_gt_st_sum import TokenGTST_Sum
@@ -9,6 +9,7 @@ from torch_geometric.nn import GCNConv
 from torch_geometric.nn import global_mean_pool
 from torch_geometric.nn import MessagePassing
 import torch.nn.functional as F
+from torch_geometric.nn import GATConv
 
 
 class TokenGTGraphRegression(nn.Module):
@@ -45,7 +46,7 @@ class TokenGTGraphRegression(nn.Module):
     def forward(self, batch):
         _, graph_emb = self._token_gt(batch.x.float(),
                                       batch.edge_index,
-                                      batch.edge_attr.unsqueeze(1).float(),
+                                      batch.edge_attr.float(),
                                       batch.ptr,
                                       batch.batch,
                                       batch.node_ids)
@@ -155,39 +156,63 @@ class GCNGraphRegression(nn.Module):
         hidden_channels,
         num_layers,
         dropout,
-        device,
+        batch_norm,
+        device, 
     ):
         super().__init__()
         self.num_layers = num_layers
+        self.batch_norm = batch_norm
+        self.dropout = dropout
 
-        self.conv1 = GCNConv(dim_node, hidden_channels)
+        self.conv1 = GCNConv(hidden_channels, hidden_channels)
         self.convs = nn.ModuleList()
         for i in range(num_layers - 1):
             self.convs.append(
                 GCNConv(hidden_channels, hidden_channels))
 
+        if batch_norm:
+            self.bn1 = nn.BatchNorm1d(hidden_channels)
+            self.bns = nn.ModuleList()
+            for i in range(num_layers - 1):
+                self.bns.append(nn.BatchNorm1d(hidden_channels))
+            self.bn_final = nn.BatchNorm1d(hidden_channels)
+
         self.lin1 = nn.Linear(hidden_channels, hidden_channels)
         self.lin2 = nn.Linear(hidden_channels, 1)
-        self.dropout = dropout
-        
-        # Move model to device
+
+        # 1-hot encode + linear node features
+        self.atom_encoder = nn.Embedding(
+            num_embeddings = 28, # num different atoms in ZINC
+            embedding_dim = hidden_channels
+        )
+
         self.to(device)
         
-        print(
-            f"initialized GCN({num_layers} layers, {hidden_channels} hidden)")
+        print(f"initialized GCN({num_layers} layers, {hidden_channels} hidden, batch_norm={batch_norm})")
 
     def forward(self, batch):
-        x, edge_index, batch_idx = batch.x.float(), batch.edge_index, batch.batch
+        x, edge_index, batch_idx = batch.x, batch.edge_index, batch.batch
 
-        x = F.relu(self.conv1(x, edge_index))
+        # 1-hot encode + linear node features
+        x = torch.squeeze(self.atom_encoder(x))
+
+        x = self.conv1(x, edge_index)
+        if self.batch_norm:
+            x = self.bn1(x)
+        x = F.relu(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
 
-        for conv in self.convs:
-            x = F.relu(conv(x, edge_index))
+        for i, conv in enumerate(self.convs):
+            x = conv(x, edge_index)
+            if self.batch_norm:
+                x = self.bns[i](x)
+            x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
 
         x = global_mean_pool(x, batch_idx)
 
+        if self.batch_norm:
+            x = self.bn_final(x)
         x = F.relu(self.lin1(x))
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.lin2(x)
@@ -281,3 +306,55 @@ class MPNNGraphRegression(nn.Module):
         x = self.lin2(x)
 
         return x
+
+
+class GATGraphRegression(nn.Module):
+    """Graph Attention Network for graph regression."""
+
+    def __init__(
+        self,
+        dim_node,
+        hidden_channels,
+        num_layers,
+        heads,
+        dropout,
+        device,
+    ):
+        super().__init__()
+        self.num_layers = num_layers
+        self.heads = heads
+        self.dropout = dropout
+
+        self.conv1 = GATConv(dim_node, hidden_channels, heads=heads, dropout=dropout)
+        self.convs = nn.ModuleList()
+        for _ in range(num_layers - 1):
+            self.convs.append(
+                GATConv(hidden_channels * heads, hidden_channels, heads=heads, dropout=dropout)
+            )
+
+        self.lin1 = nn.Linear(hidden_channels * heads, hidden_channels)
+        self.lin2 = nn.Linear(hidden_channels, 1)
+        
+        self.to(device)
+
+        print(
+            f"initialized GAT({num_layers} layers, {hidden_channels} hidden, {heads} heads)")
+
+    def forward(self, batch):
+        x, edge_index, batch_idx = batch.x.float(), batch.edge_index, batch.batch
+
+        x = F.elu(self.conv1(x, edge_index))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+
+        for conv in self.convs:
+            x = F.elu(conv(x, edge_index))
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        x = global_mean_pool(x, batch_idx)
+
+        x = F.relu(self.lin1(x))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.lin2(x)
+
+        return x
+
