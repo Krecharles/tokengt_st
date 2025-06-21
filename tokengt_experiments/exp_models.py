@@ -7,6 +7,7 @@ from models.token_gt_st_sum import TokenGTST_Sum
 from models.token_gt_st_hyp import TokenGTST_Hyp
 from torch_geometric.nn import GCNConv
 from torch_geometric.nn import global_mean_pool
+from torch_geometric.nn import MessagePassing
 import torch.nn.functional as F
 
 
@@ -183,6 +184,94 @@ class GCNGraphRegression(nn.Module):
 
         for conv in self.convs:
             x = F.relu(conv(x, edge_index))
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        x = global_mean_pool(x, batch_idx)
+
+        x = F.relu(self.lin1(x))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.lin2(x)
+
+        return x
+
+
+class MPNNConv(MessagePassing):
+    """Message Passing Neural Network convolution layer."""
+    
+    def __init__(self, in_channels, out_channels, edge_channels=None):
+        super().__init__(aggr='add')
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.edge_channels = edge_channels or in_channels
+        
+        self.message_mlp = nn.Sequential(
+            nn.Linear(2 * in_channels + self.edge_channels, out_channels),
+            nn.ReLU(),
+            nn.Linear(out_channels, out_channels)
+        )
+        
+        self.update_mlp = nn.Sequential(
+            nn.Linear(in_channels + out_channels, out_channels),
+            nn.ReLU(),
+            nn.Linear(out_channels, out_channels)
+        )
+    
+    def forward(self, x, edge_index, edge_attr=None):
+        if edge_attr is None:
+            edge_attr = torch.zeros(edge_index.size(1), self.edge_channels, device=x.device)
+        
+        return self.propagate(edge_index, x=x, edge_attr=edge_attr)
+    
+    def message(self, x_i, x_j, edge_attr):
+        inputs = torch.cat([x_i, x_j, edge_attr], dim=-1)
+        return self.message_mlp(inputs)
+    
+    def update(self, aggr_out, x):
+        inputs = torch.cat([x, aggr_out], dim=-1)
+        return self.update_mlp(inputs)
+
+
+class MPNNGraphRegression(nn.Module):
+    """Message Passing Neural Network for graph regression."""
+
+    def __init__(
+        self,
+        dim_node,
+        hidden_channels,
+        num_layers,
+        dim_edge,
+        dropout,
+        device,
+    ):
+        super().__init__()
+        self.num_layers = num_layers
+        self.hidden_channels = hidden_channels
+
+        self.conv1 = MPNNConv(dim_node, hidden_channels, dim_edge)
+        self.convs = nn.ModuleList()
+        for i in range(num_layers - 1):
+            self.convs.append(MPNNConv(hidden_channels, hidden_channels, dim_edge))
+        self.lin1 = nn.Linear(hidden_channels, hidden_channels)
+        self.lin2 = nn.Linear(hidden_channels, 1)
+        self.dropout = dropout
+        
+        self.to(device)
+        
+        print(f"initialized MPNN({num_layers} layers, {hidden_channels} hidden)")
+
+    def forward(self, batch):
+        x, edge_index, edge_attr, batch_idx = (
+            batch.x.float(), 
+            batch.edge_index, 
+            batch.edge_attr.float() if hasattr(batch, 'edge_attr') and batch.edge_attr is not None else None,
+            batch.batch
+        )
+
+        x = F.relu(self.conv1(x, edge_index, edge_attr))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+
+        for conv in self.convs:
+            x = F.relu(conv(x, edge_index, edge_attr))
             x = F.dropout(x, p=self.dropout, training=self.training)
 
         x = global_mean_pool(x, batch_idx)
