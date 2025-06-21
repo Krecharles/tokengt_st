@@ -9,10 +9,8 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn.functional as F
 import torch.optim as optim
-from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
 from torch.nn.parallel import DistributedDataParallel
-from torch.optim.lr_scheduler import StepLR
-from torch.utils.tensorboard import SummaryWriter
+from torch.optim.lr_scheduler import StepLR 
 from torch_geometric.transforms.add_orthornormal_node_identifiers import AddOrthonormalNodeIdentifiers
 from tqdm.auto import tqdm
 
@@ -20,26 +18,14 @@ from torch_geometric.data import Data
 from torch_geometric.datasets import PCQM4Mv2
 from torch_geometric.io import fs
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn.models.token_gt import TokenGT
-from torch_geometric.nn import (
-    GlobalAttention,
-    MessagePassing,
-    Set2Set,
-    global_add_pool,
-    global_max_pool,
-    global_mean_pool,
-)
-from torch_geometric.utils import degree
 import wandb
 import torch.optim.lr_scheduler as lr_scheduler
 
-try:
-    from ogb.lsc import PCQM4Mv2Evaluator, PygPCQM4Mv2Dataset
-except ImportError as e:
-    raise ImportError(
-        "`PygPCQM4Mv2Dataset` requires rdkit (`pip install rdkit`)") from e
+from ogb.lsc import PCQM4Mv2Evaluator, PygPCQM4Mv2Dataset
 
 from ogb.utils import smiles2graph
+
+from tokengt_experiments.exp_models import TokenGTGraphRegression, GCNGraphRegression
 
 
 def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
@@ -53,47 +39,6 @@ def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
         edge_attr=torch.from_numpy(data_dict['edge_feat']),
         smiles=smiles,
     )
-
-
-class TokenGTGraphRegression(torch.nn.Module):
-    def __init__(
-        self,
-        dim_node,
-        d_p,
-        d,
-        num_heads,
-        num_encoder_layers,
-        dim_feedforward,
-        include_graph_token,
-        is_laplacian_node_ids,
-        dim_edge,
-        dropout,
-        device,
-    ):
-        super().__init__()
-        self._token_gt = TokenGT(
-            dim_node=dim_node,
-            d_p=d_p,
-            d=d,
-            num_heads=num_heads,
-            num_encoder_layers=num_encoder_layers,
-            dim_feedforward=dim_feedforward,
-            dim_edge=dim_edge,
-            is_laplacian_node_ids=is_laplacian_node_ids,
-            include_graph_token=include_graph_token,
-            dropout=dropout,
-            device=device,
-        )
-        self.lm = torch.nn.Linear(d, 1, device=device)
-
-    def forward(self, batch):
-        _, graph_emb = self._token_gt(batch.x.float(),
-                                      batch.edge_index,
-                                      batch.edge_attr.float(),
-                                      batch.ptr,
-                                      batch.batch,
-                                      batch.node_ids)
-        return self.lm(graph_emb)
 
 
 def train(model, rank, device, loader, optimizer):
@@ -152,7 +97,6 @@ def run(rank, dataset, args):
         entity="krecharles-university-of-oxford",
         project="PCQM4M_TokenGT",
         config=vars(args),
-        sync_tensorboard=True,
         # mode="disabled"
     )
 
@@ -199,10 +143,13 @@ def run(rank, dataset, args):
                 root=root_f, split="holdout",
                 from_smiles=ogb_from_smiles_wrapper,
                 transform=transform)
+            valid_dataset = valid_dataset[:int(max(1024, len(valid_dataset)*args.dataset_fraction))]
+            test_dev_dataset = test_dev_dataset[:int(max(1024, len(test_dev_dataset)*args.dataset_fraction))]
+            test_challenge_dataset = test_challenge_dataset[:int(max(1024, len(test_challenge_dataset)*args.dataset_fraction))]
         else:
             valid_dataset = dataset[split_idx["valid"]]
             test_dev_dataset = dataset[split_idx["test-dev"]]
-            # test_challenge_dataset = dataset[split_idx["test-challenge"]]
+            test_challenge_dataset = dataset[split_idx["test-challenge"]]
 
         valid_loader = DataLoader(
             valid_dataset,
@@ -229,7 +176,8 @@ def run(rank, dataset, args):
 
         evaluator = PCQM4Mv2Evaluator()
 
-    model = TokenGTGraphRegression(
+    if args.model == 'token_gt':
+        model = TokenGTGraphRegression(
         dim_node=train_dataset.num_node_features,
         d_p=args.D_P,
         d=args.head_dim*args.num_heads,
@@ -242,6 +190,14 @@ def run(rank, dataset, args):
         dropout=args.dropout_ratio,
         device=device,
     )
+    elif args.model == 'gcn':
+        model = GCNGraphRegression(
+            dim_node=train_dataset.num_node_features,
+            hidden_channels=args.hidden_channels, 
+            num_layers=args.num_encoder_layers,
+            dropout=args.dropout_ratio,
+            device=device,
+        )
 
     print(f"number of parameters: {sum(p.numel() for p in model.parameters())}")
     wandb.log({"number of parameters": sum(p.numel() for p in model.parameters())})
@@ -251,18 +207,14 @@ def run(rank, dataset, args):
     if num_devices > 1:
         model = DistributedDataParallel(model, device_ids=[rank])
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-8, weight_decay=args.weight_decay)
-
-    if args.log_dir != '':
-        writer = SummaryWriter(log_dir=args.log_dir)
+    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     best_valid_mae = 1000
-    # Scheduler: linear warmup to 0.0002, then linear decay to 0
-    scheduler1 = lr_scheduler.LinearLR(optimizer, start_factor=0.000001, end_factor=args.lr, total_iters=args.warmup_iterations)
-    scheduler2 = lr_scheduler.LinearLR(optimizer, start_factor=args.lr, end_factor=0.0, total_iters=args.iterations-args.warmup_iterations)
+    # Scheduler: linear warmup to args.lr, then linear decay to 0
+    scheduler1 = lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1, total_iters=args.warmup_epochs)
+    scheduler2 = lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=0.0, total_iters=args.epochs-args.warmup_epochs)
 
-    # TODO replace 0 with args.warmup_iterations
-    scheduler = lr_scheduler.SequentialLR(optimizer, schedulers=[scheduler1, scheduler2], milestones=[0])
+    scheduler = lr_scheduler.SequentialLR(optimizer, schedulers=[scheduler1, scheduler2], milestones=[args.warmup_epochs])
 
     current_epoch = 1
 
@@ -291,9 +243,10 @@ def run(rank, dataset, args):
                   f"Train MAE: {train_mae:.4f}, "
                   f"Val MAE: {valid_mae:.4f}")
 
-            if args.log_dir != '':
-                writer.add_scalar('valid/mae', valid_mae, epoch)
-                writer.add_scalar('train/mae', train_mae, epoch)
+            wandb.log({
+                "train_mae": train_mae,
+                "valid_mae": valid_mae,
+            }, step=epoch)
 
             if valid_mae < best_valid_mae:
                 best_valid_mae = valid_mae
@@ -328,17 +281,13 @@ def run(rank, dataset, args):
 
             print(f'Best validation MAE so far: {best_valid_mae}')
 
-        if num_devices > 1:
-            dist.barrier()
-
         if rank == 0:
+            print(f"learning rate: {optimizer.param_groups[0]['lr']}")
+            wandb.log({"learning_rate": optimizer.param_groups[0]['lr']}, step=epoch)
             scheduler.step()
         if num_devices > 1:
             dist.barrier()
         
-        if rank == 0 and args.log_dir != '':
-            writer.close()
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -346,15 +295,14 @@ if __name__ == "__main__":
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         fromfile_prefix_chars='@')
     parser.add_argument('--model', type=str, default='token_gt',
-                        choices=['sage', 'gat', 'token_gt'])
+                        choices=['gcn', 'gat', 'token_gt'])
     parser.add_argument('--batch_size', type=int, default=256,
                         help='input batch size for training')
+    parser.add_argument('--warmup_epochs', type=int, default=2, help='Number of epochs to warmup the learning rate')
     parser.add_argument('--epochs', type=int, default=100,
                         help='number of epochs to train')
     parser.add_argument('--num_workers', type=int, default=0,
                         help='number of workers')
-    parser.add_argument('--log_dir', type=str, default="",
-                        help='tensorboard log directory')
     parser.add_argument('--checkpoint_dir', type=str, default='',
                         help='directory to save checkpoint')
     parser.add_argument('--save_test_dir', type=str, default='',
@@ -364,8 +312,6 @@ if __name__ == "__main__":
     parser.add_argument('--on_disk_dataset', action='store_true')
 
     parser.add_argument('--lr', type=float, default=0.0002)
-    parser.add_argument('--iterations', type=int, default=100)
-    parser.add_argument('--warmup_iterations', type=int, default=16)
     parser.add_argument('--weight_decay', type=float, default=0.0)
 
     parser.add_argument('--use_laplacian', action='store_true')
@@ -381,6 +327,9 @@ if __name__ == "__main__":
                         help='Dimension of the feedforward network')
     parser.add_argument('--dropout_ratio', type=float, default=0.1)
     parser.add_argument('--include_graph_token', action='store_true')
+    parser.add_argument('--dataset_fraction', type=float, default=1)
+    parser.add_argument('--hidden_channels', type=int, default=32,
+                        help='Number of hidden channels for GCN')
 
     args = parser.parse_args()
 
@@ -405,7 +354,7 @@ if __name__ == "__main__":
         dataset = PygPCQM4Mv2Dataset(root='/mnt/data/', transform=transform)
 
     # TODO: remove this
-    dataset = dataset.shuffle()[:int(len(dataset)*0.02)]
+    dataset = dataset.shuffle()[:int(len(dataset)*args.dataset_fraction)]
     print(f"dataset size: {len(dataset)}")
 
     if args.num_devices > 1:
