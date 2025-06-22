@@ -5,6 +5,8 @@ from torch_geometric.nn import global_mean_pool
 from torch_geometric.nn import TokenGT
 import torch.nn.functional as F
 
+from models.token_gt_st_sum import TokenGTST_Sum
+
 
 class TokenGTGraphRegression(nn.Module):
     def __init__(
@@ -24,11 +26,9 @@ class TokenGTGraphRegression(nn.Module):
     ):
         super().__init__()
         self.use_one_hot_encoding = use_one_hot_encoding
-        
-        one_hot_encoding_dim = 10 # num different atoms in ZINC
 
         self._token_gt = TokenGT(
-            dim_node=dim_node+one_hot_encoding_dim-1,
+            dim_node=dim_node,
             dim_edge=dim_edge,
             d_p=d_p,
             d=d,
@@ -44,9 +44,10 @@ class TokenGTGraphRegression(nn.Module):
             # 1-hot encode
             self.atom_encoder = nn.Embedding(
                 num_embeddings = 28, # num different atoms in ZINC
-                embedding_dim = one_hot_encoding_dim
+                embedding_dim = 28
             )
         self.lm = nn.Linear(d, 1, device=device)
+        print(f"initialized TokenGT({dim_node} node features, {dim_edge} edge features, {d} hidden, {num_heads} heads, {num_encoder_layers} layers, {dim_feedforward} feedforward, {include_graph_token} graph token, {is_laplacian_node_ids} laplacian node ids, {use_one_hot_encoding} one hot encoding, {dropout} dropout)")
 
     def forward(self, batch):
         if self.use_one_hot_encoding:
@@ -56,10 +57,57 @@ class TokenGTGraphRegression(nn.Module):
 
         _, graph_emb = self._token_gt(batch.x.float(),
                                       batch.edge_index,
-                                      batch.edge_attr,
+                                      None,
                                       batch.ptr,
                                       batch.batch,
                                       batch.node_ids)
+        return self.lm(graph_emb)
+
+
+class TokenGTSTSumGraphRegression(nn.Module):
+    """TokenGT with substructure tokens using sum aggregation."""
+
+    def __init__(
+        self,
+        dim_node,
+        d_p,
+        d,
+        num_heads,
+        num_encoder_layers,
+        dim_feedforward,
+        include_graph_token,
+        is_laplacian_node_ids,
+        dim_edge,
+        dropout,
+        device,
+        n_substructures
+    ):
+        super().__init__()
+        self._token_gt = TokenGTST_Sum(
+            dim_node=dim_node,
+            d_p=d_p,
+            d=d,
+            num_heads=num_heads,
+            num_encoder_layers=num_encoder_layers,
+            dim_feedforward=dim_feedforward,
+            dim_edge=dim_edge,
+            is_laplacian_node_ids=is_laplacian_node_ids,
+            include_graph_token=include_graph_token,
+            dropout=dropout,
+            device=device,
+            n_substructures=n_substructures
+        )
+        self.lm = nn.Linear(d, 1, device=device)
+        print(f"initialized TokenGTST_Sum({n_substructures})")
+
+    def forward(self, batch):
+        _, graph_emb = self._token_gt(batch.x[:, 1:].float(),
+                                      batch.edge_index,
+                                      batch.edge_attr.unsqueeze(1).float(),
+                                      batch.ptr,
+                                      batch.batch,
+                                      batch.node_ids,
+                                      batch.substructure_instances)
         return self.lm(graph_emb)
 
 

@@ -61,6 +61,10 @@ def get_loss(model, loader, criterion, device) -> float:
 
 def create_model(config, device, dim_node):
     if config.architecture == "TokenGT":
+        if config.use_one_hot_encoding:
+            dim_node = 28+dim_node-1 # 28 is the number of different atoms in ZINC
+        else:
+            dim_node = dim_node
         return TokenGTGraphRegression(
             dim_node=dim_node,
             dim_edge=1,
@@ -111,7 +115,7 @@ def main(config):
         entity="krecharles-university-of-oxford",
         project="substructure_embeddings",
         config=config,
-        mode="disabled"
+        # mode="disabled"
     )
 
     config = wandb.config
@@ -151,7 +155,7 @@ def main(config):
     run.log({"num_param": num_params})
 
     criterion = nn.L1Loss(reduction="sum")
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     
     scheduler = ReduceLROnPlateau(
         optimizer, 
@@ -192,7 +196,7 @@ if __name__ == "__main__":
     #     "architecture": "GCN",  # Options: "TokenGT", "GCN"
     #     "dataset": "ZINC_12K", 
     #     # set substructure_file to "" to use no substructures
-    #     "substructures_file": "",
+    #     "substructures_file": "cycles_3_8",
     #     "D_P": 32,
     #     "num_heads": 8,
     #     "d": 125,
@@ -222,14 +226,15 @@ if __name__ == "__main__":
         "dim_feedforward": 64,
         "include_graph_token": True,
         "use_laplacian": False,
-        "use_one_hot_encoding": True,
+        "use_one_hot_encoding": False,
         "batch_norm": True,
-        "dropout": 0,
-        "epochs": 250,
+        "dropout": 0.1,
+        "epochs": 100,
         "lr": 0.001,
         "lr_reduce_factor": 0.5,
         "min_lr": 0.00001,
         "patience": 10,
         "batch_size": 128,
+        "weight_decay": 0.01,
     }
     main(config)
