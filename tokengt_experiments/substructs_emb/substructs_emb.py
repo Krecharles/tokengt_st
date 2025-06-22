@@ -14,28 +14,21 @@ from torch_geometric.transforms.compose import Compose
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.data import Data
 
-import numpy as np
 import wandb
-import random
 import networkx as nx
 
 from models.add_substructure_instances import AddSubstructureInstances
-from tokengt_experiments.exp_models import (
-    TokenGTGraphRegression, 
-    GCNGraphRegression, 
-    MPNNGraphRegression
-)
+from tokengt_experiments.substructs_emb.zinc_substructs_models import GCNGraphRegression, TokenGTGraphRegression
 
 
 class AddSubstructureEmbeddings(BaseTransform):
     
     def forward(self, data) -> Data:
-        flat = list(chain.from_iterable(chain.from_iterable(data.substructure_instances)))
-        counts = torch.bincount(torch.tensor(flat, dtype=torch.long))
-        # expand counts to include nodes not in data.substructure_instances
-        counts = torch.cat([counts, torch.zeros(data.x.shape[0] - len(counts))])
+        for substruct_instances in data.substructure_instances:
+            flat = list(chain.from_iterable(substruct_instances))
+            counts = torch.bincount(torch.tensor(flat, dtype=torch.long), minlength=data.x.shape[0])
+            data.x = torch.cat([data.x, counts.unsqueeze(1)], dim=1)
         
-        data.x = torch.cat([data.x, counts.unsqueeze(1)], dim=1)
         data.edge_attr = None
         
         return data
@@ -78,6 +71,7 @@ def create_model(config, device, dim_node):
             dim_feedforward=config.dim_feedforward,
             include_graph_token=config.include_graph_token,
             is_laplacian_node_ids=config.use_laplacian,
+            use_one_hot_encoding=config.use_one_hot_encoding,
             dropout=config.dropout,
             device=device,
         )
@@ -88,15 +82,7 @@ def create_model(config, device, dim_node):
             num_layers=config.num_encoder_layers,
             dropout=config.dropout,
             batch_norm=config.batch_norm,
-            device=device,
-        )
-    elif config.architecture == "MPNN":
-        return MPNNGraphRegression(
-            dim_node=dim_node,
-            hidden_channels=config.d,
-            num_layers=config.num_encoder_layers,
-            dim_edge=1,
-            dropout=config.dropout,
+            use_one_hot_encoding=config.use_one_hot_encoding,
             device=device,
         )
     else:
@@ -202,18 +188,41 @@ def main(config):
 
 
 if __name__ == "__main__":
+    # config = {
+    #     "architecture": "GCN",  # Options: "TokenGT", "GCN"
+    #     "dataset": "ZINC_12K", 
+    #     # set substructure_file to "" to use no substructures
+    #     "substructures_file": "",
+    #     "D_P": 32,
+    #     "num_heads": 8,
+    #     "d": 125,
+    #     "num_encoder_layers": 4,
+    #     "dim_feedforward": 64,
+    #     "include_graph_token": True,
+    #     "use_laplacian": False,
+    #     "use_one_hot_encoding": True,
+    #     "batch_norm": True,
+    #     "dropout": 0,
+    #     "epochs": 250,
+    #     "lr": 0.001,
+    #     "lr_reduce_factor": 0.5,
+    #     "min_lr": 0.00001,
+    #     "patience": 10,
+    #     "batch_size": 128,
+    # }
     config = {
-        "architecture": "GCN",  # Options: "TokenGT", "GCN", "MPNN"
+        "architecture": "TokenGT",  # Options: "TokenGT", "GCN"
         "dataset": "ZINC_12K", 
         # set substructure_file to "" to use no substructures
-        "substructures_file": "subs_size6",
+        "substructures_file": "",
         "D_P": 32,
         "num_heads": 8,
-        "d": 125,
+        "d": 64,
         "num_encoder_layers": 4,
         "dim_feedforward": 64,
         "include_graph_token": True,
         "use_laplacian": False,
+        "use_one_hot_encoding": True,
         "batch_norm": True,
         "dropout": 0,
         "epochs": 250,
