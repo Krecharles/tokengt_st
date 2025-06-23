@@ -34,7 +34,8 @@ class TokenGTST_Sum(TokenGT):
         ptr: Tensor,
         batch: Tensor,
         node_ids: Tensor,
-        substructure_instances: List[List[List[List[int]]]],
+        substructure_instances: Tensor,
+        n_substructure_instances: Tensor,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         r"""Forward pass that returns embeddings for each input node and
         (optionally) a graph-level embedding for each graph in the input.
@@ -62,7 +63,7 @@ class TokenGTST_Sum(TokenGT):
         """
         batched_emb, src_key_padding_mask, node_mask = (
             self._get_tokenwise_batched_emb(x, edge_index, edge_attr, ptr,
-                                            batch, node_ids, substructure_instances))
+                                            batch, node_ids, substructure_instances, n_substructure_instances))
         if self._graph_emb is not None:
             # append special graph token
             b_s = batched_emb.shape[0]
@@ -92,7 +93,8 @@ class TokenGTST_Sum(TokenGT):
         ptr: Tensor,
         batch: Tensor,
         node_ids: Tensor,
-        substructure_instances: List[List[List[List[int]]]],
+        substructure_instances: Tensor,
+        n_substructure_instances: Tensor,
     ) -> Tuple[Tensor, Tensor, Tensor]:
         r"""Adds all identifiers, and batches data due to different
         graphs. Returns batched tokenized embeddings, together with masks.
@@ -111,24 +113,17 @@ class TokenGTST_Sum(TokenGT):
         node_emb = self._get_node_token_emb(x, node_ids)
         edge_emb = self._get_edge_token_emb(edge_attr, edge_index, node_ids)
         substructure_emb = self._get_substructure_token_emb(
-            substructure_instances, ptr, node_ids)
+            substructure_instances, n_substructure_instances, ptr, node_ids)
 
         # combine node + edge tokens,
         # and split graphs into padded batches -> [batch_size, max_tokens, d]
         n_nodes = ptr[1:] - ptr[:-1]
         n_edges = self._get_n_edges(edge_index, ptr)
 
-        # n_substruct_tokens = [(len(instances) for instances in b) for b in len(substructure_instances)]
-        n_substruct_tokens = []
-        for b in substructure_instances:
-            n_substruct_tokens.append(
-                sum([len(substructs) for substructs in b]))
-        n_substruct_tokens = torch.tensor(n_substruct_tokens, device=self._device)
-
         ptr_substructs = torch.cat(
-            [torch.tensor([0], device=self._device), torch.cumsum(n_substruct_tokens, dim=0)])
+            [torch.tensor([0], device=self._device), torch.cumsum(n_substructure_instances, dim=0)])
 
-        n_tokens = n_nodes + n_edges + n_substruct_tokens
+        n_tokens = n_nodes + n_edges + n_substructure_instances
         batched_emb = self._get_batched_emb(
             node_emb,
             edge_emb,
@@ -147,7 +142,8 @@ class TokenGTST_Sum(TokenGT):
 
     def _get_substructure_token_emb(
         self,
-        substructure_instances: List[List[List[List[int]]]],
+        substructure_instances: Tensor,
+        n_substructure_instances: Tensor,
         ptr: Tensor,
         node_ids: Tensor,
     ) -> Tensor:
@@ -157,8 +153,10 @@ class TokenGTST_Sum(TokenGT):
         edge token embedding = node_ids_prj(sum node_ids) + type_ids for the substructure 
 
         Args:
-            substructure_instances (List[List[List[List[int]]]]): 
+            substructure_instances (Tensor): 
                 [batch_size, num_substrucs, num_instances, num_instance_nodes]
+            n_substructure_instances (Tensor):
+                [batch_size]
             ptr (torch.Tensor): The pointer vector that provides a cumulative
                 sum of each graph's node count. The number of entries is one
                 more than the number of input graphs. Note: when providing a
@@ -172,28 +170,27 @@ class TokenGTST_Sum(TokenGT):
                 have number of channels equal to d_p).
         """
 
-        # For every graph in the batch batch:
-        # For every substructure, get its type id
-        # Then for every of its substructure instances, get the nodes
-        # For all of these nodes, offset them wrt the batch and sum the node_ids
+        keys = substructure_instances[:, 0] # [num_substrucs]
+        vertices = substructure_instances[:, 1:] # [num_substr, num_vertices]
+        mask = vertices != -1
 
-        structural_tokens = []
-        for b in range(len(substructure_instances)):
-            for substruc_idx, substruc in enumerate(substructure_instances[b]):
-                type_id = self._type_id_enc.weight[2 + substruc_idx]
-                for instance_nodes in substruc:
-                    # Adapt the instance_nodes to their offset in the batch.
-                    sub_nodes_sum = node_ids[torch.tensor(instance_nodes, device=node_ids.device) +
-                                             ptr[b]].sum(dim=0)
-                    node_ids_prj = self._node_id_enc(
-                        torch.concat((sub_nodes_sum, sub_nodes_sum), 0))
-                    structural_tokens.append(node_ids_prj + type_id)
+        # Offset vertices because they are batched.
+        instance_to_graph = torch.arange(len(n_substructure_instances)).repeat_interleave(n_substructure_instances)
+        offsets = ptr[instance_to_graph].unsqueeze(1)
 
-        if len(structural_tokens) == 0:
-            return torch.empty((0, self._d), device=self._device)
-        else:
-            # [n_substructure_tokens, d]
-            return torch.stack(structural_tokens, dim=0)
+        offset_vertices = vertices.clone() + offsets
+        offset_vertices[~mask] = 0
+
+        # Lookup the node_ids for the vertices
+        node_ids_prj = node_ids[offset_vertices]
+        node_ids_prj = node_ids_prj * mask.unsqueeze(2).float()
+        substructure_emb = node_ids_prj.sum(dim=1)
+
+        type_ids = self._type_id_enc.weight[2 + keys]
+        substructure_emb = torch.concat([substructure_emb, substructure_emb], dim=1)
+
+        return type_ids + substructure_emb
+
 
     @staticmethod
     @torch.no_grad()

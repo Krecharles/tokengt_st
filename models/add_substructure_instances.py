@@ -1,6 +1,7 @@
 from typing import List
 import networkx as nx
 
+import torch
 from torch_geometric.data import Data
 from torch_geometric.data.datapipes import functional_transform
 from torch_geometric.transforms import BaseTransform
@@ -12,6 +13,7 @@ class AddSubstructureInstances(BaseTransform):
 
     def __init__(self, substructures: List[nx.Graph]):
         self._substructures = substructures
+        self._largest_substructure_size = max(substructure.number_of_nodes() for substructure in substructures)
 
     def forward(self, data: Data) -> Data:
         assert data.num_nodes is not None
@@ -22,9 +24,12 @@ class AddSubstructureInstances(BaseTransform):
         substructure_instances = []
         for i, gpattern in enumerate(self._substructures):
             instances = self._find_uniques(G, gpattern)
-            substructure_instances.append(instances)
+            # prepend substructure type id to each instance and match largest substructure size
+            instances = [[i] + instance + [-1] * (self._largest_substructure_size - len(instance)) for instance in instances]
+            substructure_instances.extend(instances)
 
-        data["substructure_instances"] = substructure_instances
+        data["substructure_instances"] = torch.tensor(substructure_instances, dtype=torch.long)
+        data["n_substructure_instances"] = torch.tensor(len(substructure_instances), dtype=torch.long)
         return data
 
     @staticmethod

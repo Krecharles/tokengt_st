@@ -77,6 +77,7 @@ class TokenGTSTSumGraphRegression(nn.Module):
         dim_feedforward,
         include_graph_token,
         is_laplacian_node_ids,
+        use_one_hot_encoding,
         dim_edge,
         dropout,
         device,
@@ -97,17 +98,33 @@ class TokenGTSTSumGraphRegression(nn.Module):
             device=device,
             n_substructures=n_substructures
         )
+        self.use_one_hot_encoding = use_one_hot_encoding
+
+        if use_one_hot_encoding:
+            # 1-hot encode
+            self.atom_encoder = nn.Embedding(
+                num_embeddings = 28,
+                embedding_dim = 28
+            )
+
         self.lm = nn.Linear(d, 1, device=device)
         print(f"initialized TokenGTST_Sum({n_substructures})")
 
     def forward(self, batch):
-        _, graph_emb = self._token_gt(batch.x[:, 1:].float(),
+        if self.use_one_hot_encoding:
+            # atom features are the first column of x, other features come later
+            atom_features = torch.squeeze(self.atom_encoder(batch.x[:, 0].long()))
+        else:
+            # throw away count embedding in tgt_sum
+            atom_features = batch.x[:, 0].unsqueeze(1).float()
+        _, graph_emb = self._token_gt(atom_features,
                                       batch.edge_index,
-                                      batch.edge_attr.unsqueeze(1).float(),
+                                      None,
                                       batch.ptr,
                                       batch.batch,
                                       batch.node_ids,
-                                      batch.substructure_instances)
+                                      batch.substructure_instances,
+                                      batch.n_substructure_instances)
         return self.lm(graph_emb)
 
 

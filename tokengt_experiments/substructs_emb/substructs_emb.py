@@ -18,19 +18,31 @@ import wandb
 import networkx as nx
 
 from models.add_substructure_instances import AddSubstructureInstances
-from tokengt_experiments.substructs_emb.zinc_substructs_models import GCNGraphRegression, TokenGTGraphRegression
+from tokengt_experiments.substructs_emb.zinc_substructs_models import GCNGraphRegression, TokenGTGraphRegression, TokenGTSTSumGraphRegression
 
 
 class AddSubstructureEmbeddings(BaseTransform):
+
+    def __init__(self, n_substructures):
+        self.n_substructures = n_substructures
     
     def forward(self, data) -> Data:
-        for substruct_instances in data.substructure_instances:
-            flat = list(chain.from_iterable(substruct_instances))
-            counts = torch.bincount(torch.tensor(flat, dtype=torch.long), minlength=data.x.shape[0])
-            data.x = torch.cat([data.x, counts.unsqueeze(1)], dim=1)
-        
+        if len(data.substructure_instances) == 0:
+            emb = torch.zeros(data.x.shape[0], self.n_substructures, dtype=torch.long)
+        else:
+            keys = data.substructure_instances[:, 0]
+            vertices = data.substructure_instances[:, 1:]
+
+            valid_mask = vertices != -1
+            flat_vertices = vertices[valid_mask]
+            repeated_keys = keys.unsqueeze(1).expand_as(vertices)[valid_mask]
+
+            emb = torch.zeros(data.x.shape[0], self.n_substructures, dtype=torch.long)
+            emb.index_put_((flat_vertices, repeated_keys), torch.ones_like(flat_vertices), accumulate=True)
+
+        data.x = torch.cat([data.x, emb], dim=1)
         data.edge_attr = None
-        
+
         return data
 
 
@@ -59,7 +71,7 @@ def get_loss(model, loader, criterion, device) -> float:
             total_loss += loss
     return total_loss / len(loader.dataset)
 
-def create_model(config, device, dim_node):
+def create_model(config, device, dim_node, n_substructures):
     if config.architecture == "TokenGT":
         if config.use_one_hot_encoding:
             dim_node = 28+dim_node-1 # 28 is the number of different atoms in ZINC
@@ -77,6 +89,26 @@ def create_model(config, device, dim_node):
             is_laplacian_node_ids=config.use_laplacian,
             use_one_hot_encoding=config.use_one_hot_encoding,
             dropout=config.dropout,
+            device=device,
+        )
+    elif config.architecture == "TokenGT_Sum":
+        if config.use_one_hot_encoding:
+            dim_node = 28
+        else:
+            dim_node = 1 # just one scalar for the atom feature, no count embedding
+        return TokenGTSTSumGraphRegression(
+            dim_node=dim_node,
+            dim_edge=1,
+            d_p=config.D_P,
+            d=config.d,
+            num_heads=config.num_heads,
+            num_encoder_layers=config.num_encoder_layers,
+            dim_feedforward=config.dim_feedforward,
+            include_graph_token=config.include_graph_token,
+            is_laplacian_node_ids=config.use_laplacian,
+            use_one_hot_encoding=config.use_one_hot_encoding,
+            dropout=config.dropout,
+            n_substructures=n_substructures,
             device=device,
         )
     elif config.architecture == "GCN":
@@ -115,7 +147,7 @@ def main(config):
         entity="krecharles-university-of-oxford",
         project="substructure_embeddings",
         config=config,
-        # mode="disabled"
+        mode="disabled"
     )
 
     config = wandb.config
@@ -130,7 +162,7 @@ def main(config):
     transform = Compose([
         AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
         AddSubstructureInstances(substructures),
-        AddSubstructureEmbeddings()
+        AddSubstructureEmbeddings(len(substructures))
     ])
 
     path = osp.join(osp.realpath(os.getcwd()),
@@ -146,7 +178,7 @@ def main(config):
     val_loader = DataLoader(val_dataset, batch_size=config.batch_size)
     test_loader = DataLoader(test_dataset, batch_size=config.batch_size)
 
-    model = create_model(config, device, train_dataset.num_node_features)
+    model = create_model(config, device, train_dataset.num_node_features, len(substructures))
     model.to(device)
 
     num_params = sum(p.numel() for p in model.parameters())
@@ -215,10 +247,10 @@ if __name__ == "__main__":
     #     "batch_size": 128,
     # }
     config = {
-        "architecture": "TokenGT",  # Options: "TokenGT", "GCN"
+        "architecture": "TokenGT_Sum",  # Options: "TokenGT", "GCN"
         "dataset": "ZINC_12K", 
         # set substructure_file to "" to use no substructures
-        "substructures_file": "",
+        "substructures_file": "cycles_3_8",
         "D_P": 32,
         "num_heads": 8,
         "d": 64,
