@@ -58,8 +58,10 @@ class TokenGTST_Sum(TokenGT):
             node_ids (torch.Tensor): Orthonormal node identifiers (needs to
                 have number of channels equal to d_p).
                 A map of n_substructures entries, 
-            substructure_instances (List[List[List[List[int]]]]): 
-                [batch_size, num_substrucs, num_instances, num_instance_nodes]
+            substructure_instances (Tensor): 
+                [num_substrucs, num_instances, num_instance_nodes]
+            n_substructure_instances (Tensor):
+                [batch_size]
         """
         batched_emb, src_key_padding_mask, node_mask = (
             self._get_tokenwise_batched_emb(x, edge_index, edge_attr, ptr,
@@ -182,14 +184,14 @@ class TokenGTST_Sum(TokenGT):
         offset_vertices[~mask] = 0
 
         # Lookup the node_ids for the vertices
-        node_ids_prj = node_ids[offset_vertices]
-        node_ids_prj = node_ids_prj * mask.unsqueeze(2).float()
-        substructure_emb = node_ids_prj.sum(dim=1)
+        substrs_node_ids = node_ids[offset_vertices]
+        substrs_node_ids = substrs_node_ids * mask.unsqueeze(2).float()
+        substrs_node_ids_sum = substrs_node_ids.sum(dim=1)
 
         type_ids = self._type_id_enc.weight[2 + keys]
-        substructure_emb = torch.concat([substructure_emb, substructure_emb], dim=1)
+        node_ids_prj = torch.concat([substrs_node_ids_sum, substrs_node_ids_sum], dim=1)
 
-        return type_ids + substructure_emb
+        return type_ids + node_ids_prj
 
 
     @staticmethod

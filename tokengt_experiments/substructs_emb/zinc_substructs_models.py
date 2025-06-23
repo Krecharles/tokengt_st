@@ -6,6 +6,7 @@ from torch_geometric.nn import TokenGT
 import torch.nn.functional as F
 
 from models.token_gt_st_sum import TokenGTST_Sum
+from models.token_gt_st_hyp import TokenGTST_Hyp
 
 
 class TokenGTGraphRegression(nn.Module):
@@ -127,6 +128,69 @@ class TokenGTSTSumGraphRegression(nn.Module):
                                       batch.n_substructure_instances)
         return self.lm(graph_emb)
 
+class TokenGTSTHypGraphRegression(nn.Module):
+    """TokenGT with substructure tokens using sum aggregation."""
+
+    def __init__(
+        self,
+        dim_node,
+        d_p,
+        d,
+        num_heads,
+        num_encoder_layers,
+        dim_feedforward,
+        include_graph_token,
+        is_laplacian_node_ids,
+        use_one_hot_encoding,
+        dim_edge,
+        dropout,
+        device,
+        n_substructures
+    ):
+        super().__init__()
+        self._token_gt = TokenGTST_Hyp(
+            dim_node=dim_node,
+            d_p=d_p,
+            d=d,
+            num_heads=num_heads,
+            num_encoder_layers=num_encoder_layers,
+            dim_feedforward=dim_feedforward,
+            dim_edge=dim_edge,
+            is_laplacian_node_ids=is_laplacian_node_ids,
+            include_graph_token=include_graph_token,
+            dropout=dropout,
+            device=device,
+            n_substructures=n_substructures
+        )
+        self.use_one_hot_encoding = use_one_hot_encoding
+
+        if use_one_hot_encoding:
+            # 1-hot encode
+            self.atom_encoder = nn.Embedding(
+                num_embeddings = 28,
+                embedding_dim = 28
+            )
+
+        self.lm = nn.Linear(d, 1, device=device)
+        print(f"initialized TokenGTST_Sum({n_substructures})")
+
+    def forward(self, batch):
+        if self.use_one_hot_encoding:
+            # atom features are the first column of x, other features come later
+            atom_features = torch.squeeze(self.atom_encoder(batch.x[:, 0].long()))
+        else:
+            # throw away count embedding in tgt_sum
+            atom_features = batch.x[:, 0].unsqueeze(1).float()
+        _, graph_emb = self._token_gt(atom_features,
+                                      batch.edge_index,
+                                      None,
+                                      batch.ptr,
+                                      batch.batch,
+                                      batch.node_ids,
+                                      batch.substructure_instances,
+                                      batch.n_substructure_instances)
+        return self.lm(graph_emb)
+
 
 class GCNGraphRegression(nn.Module):
     """Graph Convolutional Network for graph regression."""
@@ -140,6 +204,7 @@ class GCNGraphRegression(nn.Module):
         batch_norm,
         use_one_hot_encoding,
         device, 
+        num_embeddings
     ):
         super().__init__()
         self.num_layers = num_layers
@@ -169,7 +234,7 @@ class GCNGraphRegression(nn.Module):
         if self.use_one_hot_encoding:
             # 1-hot encode + linear node features
             self.atom_encoder = nn.Embedding(
-                num_embeddings = 28, # num different atoms in ZINC
+                num_embeddings = num_embeddings,
                 embedding_dim = hidden_channels-dim_node+1
             )
 

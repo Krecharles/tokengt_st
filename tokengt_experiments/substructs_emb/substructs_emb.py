@@ -18,7 +18,7 @@ import wandb
 import networkx as nx
 
 from models.add_substructure_instances import AddSubstructureInstances
-from tokengt_experiments.substructs_emb.zinc_substructs_models import GCNGraphRegression, TokenGTGraphRegression, TokenGTSTSumGraphRegression
+from tokengt_experiments.substructs_emb.zinc_substructs_models import GCNGraphRegression, TokenGTGraphRegression, TokenGTSTSumGraphRegression, TokenGTSTHypGraphRegression
 
 
 class AddSubstructureEmbeddings(BaseTransform):
@@ -42,6 +42,32 @@ class AddSubstructureEmbeddings(BaseTransform):
 
         data.x = torch.cat([data.x, emb], dim=1)
         data.edge_attr = None
+
+        return data
+
+class AddSubstructureMatchesAsVNs(BaseTransform):
+    
+    def __init__(self, n_substructures):
+        self.n_substructures = n_substructures
+
+    def forward(self, data) -> Data:
+        if len(data.substructure_instances) == 0:
+            return data
+
+        keys = data.substructure_instances[:, 0]
+        vertices = data.substructure_instances[:, 1:]
+        
+        data.x = torch.cat([data.x, keys.unsqueeze(1)+28], dim=0) # let the substructure keys be the numbers after the 28 atom types
+        
+        mask = vertices != -1
+        vn_repeat = keys.unsqueeze(1).expand_as(vertices)
+        src = vn_repeat[mask]
+        dst = vertices[mask]
+
+        vn_to_v = torch.stack([src, dst], dim=0)
+        v_to_vn = torch.stack([dst, src], dim=0)
+
+        data.edge_index = torch.cat([data.edge_index, vn_to_v, v_to_vn], dim=1)
 
         return data
 
@@ -111,6 +137,26 @@ def create_model(config, device, dim_node, n_substructures):
             n_substructures=n_substructures,
             device=device,
         )
+    elif config.architecture == "TokenGT_Hyp":
+        if config.use_one_hot_encoding:
+            dim_node = 28
+        else:
+            dim_node = 1 # just one scalar for the atom feature, no count embedding
+        return TokenGTSTHypGraphRegression(
+            dim_node=dim_node,
+            dim_edge=1,
+            d_p=config.D_P,
+            d=config.d,
+            num_heads=config.num_heads,
+            num_encoder_layers=config.num_encoder_layers,
+            dim_feedforward=config.dim_feedforward,
+            include_graph_token=config.include_graph_token,
+            is_laplacian_node_ids=config.use_laplacian,
+            use_one_hot_encoding=config.use_one_hot_encoding,
+            dropout=config.dropout,
+            n_substructures=n_substructures,
+            device=device,
+        )
     elif config.architecture == "GCN":
         return GCNGraphRegression(
             dim_node=dim_node,
@@ -119,6 +165,7 @@ def create_model(config, device, dim_node, n_substructures):
             dropout=config.dropout,
             batch_norm=config.batch_norm,
             use_one_hot_encoding=config.use_one_hot_encoding,
+            num_embeddings=28+n_substructures,
             device=device,
         )
     else:
@@ -159,14 +206,21 @@ def main(config):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    transform = Compose([
-        AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
-        AddSubstructureInstances(substructures),
-        AddSubstructureEmbeddings(len(substructures))
-    ])
+    if config.substructure_vns:
+        transform = Compose([
+            AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
+            AddSubstructureInstances(substructures),
+            AddSubstructureMatchesAsVNs(len(substructures))
+        ])
+    else:
+        transform = Compose([
+            AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
+            AddSubstructureInstances(substructures),
+            # AddSubstructureEmbeddings(len(substructures)),
+        ])
 
     path = osp.join(osp.realpath(os.getcwd()),
-                    "data", f"ZINC-{config.use_laplacian}-{config.D_P}-{config.substructures_file}")
+                    "data", f"ZINC-{config.use_laplacian}-{config.D_P}-{config.substructures_file}-{config.substructure_vns}")
     
     train_dataset = ZINC(path, subset=True, split="train",
                          pre_transform=transform)
@@ -229,6 +283,7 @@ if __name__ == "__main__":
     #     "dataset": "ZINC_12K", 
     #     # set substructure_file to "" to use no substructures
     #     "substructures_file": "cycles_3_8",
+    #     "substructure_vns": True,
     #     "D_P": 32,
     #     "num_heads": 8,
     #     "d": 125,
@@ -245,12 +300,14 @@ if __name__ == "__main__":
     #     "min_lr": 0.00001,
     #     "patience": 10,
     #     "batch_size": 128,
+    #     "weight_decay": 0.01,
     # }
     config = {
-        "architecture": "TokenGT_Sum",  # Options: "TokenGT", "GCN"
+        "architecture": "TokenGT_Hyp",  # Options: "TokenGT", "GCN"
         "dataset": "ZINC_12K", 
         # set substructure_file to "" to use no substructures
-        "substructures_file": "cycles_3_8",
+        "substructures_file": "subs_size6",
+        "substructure_vns": False,
         "D_P": 32,
         "num_heads": 8,
         "d": 64,
@@ -258,7 +315,7 @@ if __name__ == "__main__":
         "dim_feedforward": 64,
         "include_graph_token": True,
         "use_laplacian": False,
-        "use_one_hot_encoding": False,
+        "use_one_hot_encoding": True,
         "batch_norm": True,
         "dropout": 0.1,
         "epochs": 100,
