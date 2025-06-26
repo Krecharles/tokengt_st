@@ -5,7 +5,8 @@ rm -r tokengt_experiments/pcqm4m/checkpoints
 python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --model gcn \
     --checkpoint_dir tokengt_experiments/pcqm4m/checkpoints \
-    --num_devices 1 \
+    --save_test_dir tokengt_experiments/pcqm4m/test_dev \
+    --num_devices 0 \
     --D_P 64 \
     --lr 0.001 \
     --epochs 30 \

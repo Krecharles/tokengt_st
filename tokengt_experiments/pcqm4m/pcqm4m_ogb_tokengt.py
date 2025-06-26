@@ -130,7 +130,7 @@ def run(rank, dataset, args):
 
     if rank == 0:
         transform = AddOrthonormalNodeIdentifiers(args.D_P, args.use_laplacian) 
-        root_f = f'mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
+        root_f = f'/mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
         if args.on_disk_dataset:
             valid_dataset = PCQM4Mv2(root=root_f, split="val",
                                      from_smiles=ogb_from_smiles_wrapper,
@@ -321,7 +321,7 @@ if __name__ == "__main__":
     parser.add_argument('--weight_decay', type=float, default=0.0)
 
     parser.add_argument('--use_laplacian', action='store_true')
-    parser.add_argument('--D_P', type=int, default=16,
+    parser.add_argument('--D_P', type=int, default=64,
                         help='Positional encoding dimension (e.g., 16 for LapPE, 64 for ORF)')
     parser.add_argument('--head_dim', type=int, default=24,
                         help='Dimension of each attention head')
@@ -352,12 +352,13 @@ if __name__ == "__main__":
     transform = AddOrthonormalNodeIdentifiers(
         args.D_P, args.use_laplacian)
     if args.on_disk_dataset:
-        root_f = f'mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
+        root_f = f'/mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
+        print(f"Saving to {root_f}")
         dataset = PCQM4Mv2(root=root_f, split='train',
                            from_smiles=ogb_from_smiles_wrapper,
                            transform=transform)
     else:
-        dataset = PygPCQM4Mv2Dataset(root='mnt/data/', transform=transform)
+        dataset = PygPCQM4Mv2Dataset(root='/mnt/data/', transform=transform)
 
     # TODO: remove this
     dataset = dataset.shuffle()[:int(len(dataset)*args.dataset_fraction)]

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, global_mean_pool, GATConv
+from torch_geometric.nn import GCNConv, global_mean_pool, GATConv, GATv2Conv
 
 from models.token_gt_st_sum import TokenGT
 
@@ -9,6 +9,7 @@ def convert_to_single_emb(x, offset: int = 512):
     # https://github.com/jw9730/tokengt/blob/main/large-scale-regression/tokengt/data/wrapper.py
     feature_num = x.size(1) if len(x.size()) > 1 else 1
     feature_offset = 1 + torch.arange(0, feature_num * offset, offset, dtype=torch.long)
+    feature_offset = feature_offset.to(x.device)
     x = x + feature_offset
     return x
 
@@ -133,7 +134,7 @@ class GCNGraphRegression(nn.Module):
         return x
 
 class GATGraphRegression(nn.Module):
-    """Graph Attention Network for graph regression."""
+    """Graph Attention Network for graph regression (GATv2 version)."""
 
     def __init__(
         self,
@@ -152,11 +153,11 @@ class GATGraphRegression(nn.Module):
         self.atom_encoder = nn.Embedding(512 * 9, hidden_channels, padding_idx=0)
         # GAT does not use edge features, so we don't need to encode them.
 
-        self.conv1 = GATConv(hidden_channels, hidden_channels, heads=heads, dropout=dropout)
+        self.conv1 = GATv2Conv(hidden_channels, hidden_channels, heads=heads, dropout=dropout)
         self.convs = nn.ModuleList()
         for _ in range(num_layers - 1):
             self.convs.append(
-                GATConv(hidden_channels * heads, hidden_channels, heads=heads, dropout=dropout)
+                GATv2Conv(hidden_channels * heads, hidden_channels, heads=heads, dropout=dropout)
             )
 
         self.lin1 = nn.Linear(hidden_channels * heads, hidden_channels)
@@ -165,7 +166,7 @@ class GATGraphRegression(nn.Module):
         self.to(device)
 
         print(
-            f"initialized GAT({num_layers} layers, {hidden_channels} hidden, {heads} heads)")
+            f"initialized GATv2({num_layers} layers, {hidden_channels} hidden, {heads} heads)")
 
     def forward(self, batch):
         x, edge_index, edge_attr, batch_idx = batch.x, batch.edge_index, batch.edge_attr, batch.batch
