@@ -100,7 +100,8 @@ def get_loss(model, loader, criterion, device) -> float:
 def create_model(config, device, dim_node, n_substructures):
     if config.architecture == "TokenGT":
         if config.use_one_hot_encoding:
-            dim_node = 28+dim_node-1 # 28 is the number of different atoms in ZINC
+            one_hot_dim = 28 if not config.substructure_vns else 28+n_substructures
+            dim_node = one_hot_dim+dim_node-1 # 28 is the number of different atoms in ZINC so the first dim is expanded to 28
         else:
             dim_node = dim_node
         return TokenGTGraphRegression(
@@ -114,6 +115,7 @@ def create_model(config, device, dim_node, n_substructures):
             include_graph_token=config.include_graph_token,
             is_laplacian_node_ids=config.use_laplacian,
             use_one_hot_encoding=config.use_one_hot_encoding,
+            num_embeddings=one_hot_dim,
             dropout=config.dropout,
             device=device,
         )
@@ -183,19 +185,12 @@ def load_substructures(filepath: str):
             out.append(G)
         return out
 
-def main(config):
+def main(config, run):
     # torch.manual_seed(42)
     # np.random.seed(42)
     # random.seed(42)
     # torch.cuda.manual_seed_all(42)
     # torch.backends.cudnn.deterministic = True
-
-    run = wandb.init(
-        entity="krecharles-university-of-oxford",
-        project="substructure_embeddings",
-        config=config,
-        mode="disabled"
-    )
 
     config = wandb.config
 
@@ -210,13 +205,13 @@ def main(config):
         transform = Compose([
             AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
             AddSubstructureInstances(substructures),
-            AddSubstructureMatchesAsVNs(len(substructures))
+            AddSubstructureMatchesAsVNs(len(substructures)),
         ])
     else:
         transform = Compose([
             AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
             AddSubstructureInstances(substructures),
-            # AddSubstructureEmbeddings(len(substructures)),
+            AddSubstructureEmbeddings(len(substructures)),
         ])
 
     path = osp.join(osp.realpath(os.getcwd()),
@@ -293,8 +288,8 @@ if __name__ == "__main__":
     #     "use_laplacian": False,
     #     "use_one_hot_encoding": True,
     #     "batch_norm": True,
-    #     "dropout": 0,
-    #     "epochs": 250,
+    #     "dropout": 0.0,
+    #     "epochs": 100,
     #     "lr": 0.001,
     #     "lr_reduce_factor": 0.5,
     #     "min_lr": 0.00001,
@@ -303,10 +298,10 @@ if __name__ == "__main__":
     #     "weight_decay": 0.01,
     # }
     config = {
-        "architecture": "TokenGT_Hyp",  # Options: "TokenGT", "GCN"
+        "architecture": "TokenGT",  # Options: "TokenGT", "TokenGT_Sum", "TokenGT_Hyp", "GCN"
         "dataset": "ZINC_12K", 
         # set substructure_file to "" to use no substructures
-        "substructures_file": "subs_size6",
+        "substructures_file": "",
         "substructure_vns": False,
         "D_P": 32,
         "num_heads": 8,
@@ -314,7 +309,7 @@ if __name__ == "__main__":
         "num_encoder_layers": 4,
         "dim_feedforward": 64,
         "include_graph_token": True,
-        "use_laplacian": False,
+        "use_laplacian": True,
         "use_one_hot_encoding": True,
         "batch_norm": True,
         "dropout": 0.1,
@@ -326,4 +321,10 @@ if __name__ == "__main__":
         "batch_size": 128,
         "weight_decay": 0.01,
     }
-    main(config)
+    run = wandb.init(
+        entity="krecharles-university-of-oxford",
+        project="substructure_embeddings",
+        config=config,
+        # mode="disabled"
+    )
+    main(config, run)

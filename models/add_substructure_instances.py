@@ -13,7 +13,10 @@ class AddSubstructureInstances(BaseTransform):
 
     def __init__(self, substructures: List[nx.Graph]):
         self._substructures = substructures
-        self._largest_substructure_size = max(substructure.number_of_nodes() for substructure in substructures)
+        if len(substructures) == 0:
+            self._largest_substructure_size = 0
+        else:
+            self._largest_substructure_size = max(substructure.number_of_nodes() for substructure in substructures)
 
     def forward(self, data: Data) -> Data:
         assert data.num_nodes is not None

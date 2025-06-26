@@ -21,6 +21,7 @@ class TokenGTGraphRegression(nn.Module):
         include_graph_token,
         is_laplacian_node_ids,
         use_one_hot_encoding,
+        num_embeddings,
         dim_edge,
         dropout,
         device,
@@ -44,8 +45,8 @@ class TokenGTGraphRegression(nn.Module):
         if self.use_one_hot_encoding:
             # 1-hot encode
             self.atom_encoder = nn.Embedding(
-                num_embeddings = 28, # num different atoms in ZINC
-                embedding_dim = 28
+                num_embeddings = num_embeddings, # num different atoms in ZINC
+                embedding_dim = num_embeddings
             )
         self.lm = nn.Linear(d, 1, device=device)
         print(f"initialized TokenGT({dim_node} node features, {dim_edge} edge features, {d} hidden, {num_heads} heads, {num_encoder_layers} layers, {dim_feedforward} feedforward, {include_graph_token} graph token, {is_laplacian_node_ids} laplacian node ids, {use_one_hot_encoding} one hot encoding, {dropout} dropout)")
