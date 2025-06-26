@@ -177,7 +177,7 @@ class TokenGTST_Sum(TokenGT):
         mask = vertices != -1
 
         # Offset vertices because they are batched.
-        instance_to_graph = torch.arange(len(n_substructure_instances)).repeat_interleave(n_substructure_instances)
+        instance_to_graph = torch.arange(len(n_substructure_instances), device=n_substructure_instances.device).repeat_interleave(n_substructure_instances)
         offsets = ptr[instance_to_graph].unsqueeze(1)
 
         offset_vertices = vertices.clone() + offsets
