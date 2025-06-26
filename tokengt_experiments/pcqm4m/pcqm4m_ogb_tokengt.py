@@ -1,5 +1,8 @@
 # Code adapted from OGB.
 # https://github.com/snap-stanford/ogb/tree/master/examples/lsc/pcqm4m-v2
+# and from
+# https://github.com/pyg-team/pytorch_geometric/blob/b8c0d82d3e8a66063a9fe33ec31c8bb654c1fdc3/examples/multi_gpu/pcqm4m_ogb.py#L4
+
 import argparse
 import math
 import os
@@ -7,17 +10,14 @@ import os
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import torch.nn.functional as F
 import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel
-from torch.optim.lr_scheduler import StepLR 
 from torch_geometric.transforms.add_orthornormal_node_identifiers import AddOrthonormalNodeIdentifiers
 from tqdm.auto import tqdm
 
-from torch_geometric.data import Data
+from torch_geometric.data import Data, DataLoader
 from torch_geometric.datasets import PCQM4Mv2
 from torch_geometric.io import fs
-from torch_geometric.loader import DataLoader
 import wandb
 import torch.optim.lr_scheduler as lr_scheduler
 
@@ -25,7 +25,7 @@ from ogb.lsc import PCQM4Mv2Evaluator, PygPCQM4Mv2Dataset
 
 from ogb.utils import smiles2graph
 
-from tokengt_experiments.exp_models import TokenGTGraphRegression, GCNGraphRegression
+from tokengt_experiments.pcqm4m.pcqm4m_models import GATGraphRegression, TokenGTGraphRegression, GCNGraphRegression
 
 
 def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
@@ -97,7 +97,7 @@ def run(rank, dataset, args):
         entity="krecharles-university-of-oxford",
         project="PCQM4M_TokenGT",
         config=vars(args),
-        # mode="disabled"
+        mode="disabled"
     )
 
     num_devices = args.num_devices
@@ -130,7 +130,7 @@ def run(rank, dataset, args):
 
     if rank == 0:
         transform = AddOrthonormalNodeIdentifiers(args.D_P, args.use_laplacian) 
-        root_f = f'/mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
+        root_f = f'mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
         if args.on_disk_dataset:
             valid_dataset = PCQM4Mv2(root=root_f, split="val",
                                      from_smiles=ogb_from_smiles_wrapper,
@@ -178,7 +178,6 @@ def run(rank, dataset, args):
 
     if args.model == 'token_gt':
         model = TokenGTGraphRegression(
-        dim_node=train_dataset.num_node_features,
         d_p=args.D_P,
         d=args.head_dim*args.num_heads,
         num_heads=args.num_heads,
@@ -186,15 +185,22 @@ def run(rank, dataset, args):
         dim_feedforward=args.dim_feedforward,
         include_graph_token=args.include_graph_token,
         is_laplacian_node_ids=args.use_laplacian,
-        dim_edge=train_dataset.num_edge_features,
         dropout=args.dropout_ratio,
         device=device,
     )
     elif args.model == 'gcn':
         model = GCNGraphRegression(
-            dim_node=train_dataset.num_node_features,
             hidden_channels=args.hidden_channels, 
+            batch_norm=True,
             num_layers=args.num_encoder_layers,
+            dropout=args.dropout_ratio,
+            device=device,
+        )
+    elif args.model == 'gat':
+        model = GATGraphRegression(
+            hidden_channels=args.hidden_channels,
+            num_layers=args.num_encoder_layers,
+            heads=args.num_heads,
             dropout=args.dropout_ratio,
             device=device,
         )
@@ -294,7 +300,7 @@ if __name__ == "__main__":
         description='TokenGT baselines on pcqm4m',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         fromfile_prefix_chars='@')
-    parser.add_argument('--model', type=str, default='token_gt',
+    parser.add_argument('--model', type=str, default='gcn',
                         choices=['gcn', 'gat', 'token_gt'])
     parser.add_argument('--batch_size', type=int, default=256,
                         help='input batch size for training')
@@ -346,12 +352,12 @@ if __name__ == "__main__":
     transform = AddOrthonormalNodeIdentifiers(
         args.D_P, args.use_laplacian)
     if args.on_disk_dataset:
-        root_f = f'/mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
+        root_f = f'mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
         dataset = PCQM4Mv2(root=root_f, split='train',
                            from_smiles=ogb_from_smiles_wrapper,
                            transform=transform)
     else:
-        dataset = PygPCQM4Mv2Dataset(root='/mnt/data/', transform=transform)
+        dataset = PygPCQM4Mv2Dataset(root='mnt/data/', transform=transform)
 
     # TODO: remove this
     dataset = dataset.shuffle()[:int(len(dataset)*args.dataset_fraction)]

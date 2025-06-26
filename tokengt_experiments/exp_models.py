@@ -284,4 +284,3 @@ class GATGraphRegression(nn.Module):
         x = self.lin2(x)
 
         return x
-

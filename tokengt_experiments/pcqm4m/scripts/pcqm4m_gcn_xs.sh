@@ -1,10 +1,10 @@
 #!/bin/bash
 
-rm -r pcqm4m
+rm -r tokengt_experiments/pcqm4m/checkpoints
 
-python -m tokengt_experiments.pcqm4m_ogb_tokengt \
+python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --model gcn \
-    --checkpoint_dir pcqm4m/checkpoints \
+    --checkpoint_dir tokengt_experiments/pcqm4m/checkpoints \
     --num_devices 1 \
     --D_P 64 \
     --lr 0.001 \
@@ -16,4 +16,4 @@ python -m tokengt_experiments.pcqm4m_ogb_tokengt \
     --num_encoder_layers 8 \
     --dropout_ratio 0.3 \
     --on_disk_dataset \
-    --dataset_fraction 0.01 
+    --dataset_fraction 0.01

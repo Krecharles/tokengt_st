@@ -1,9 +1,9 @@
 #!/bin/bash
 
-python -m tokengt_experiments.pcqm4m_ogb_tokengt \
+python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --model token_gt \
-    --log_dir pcqm4m/logs \
-    --checkpoint_dir pcqm4m/checkpoints \
+    --log_dir tokengt_experiments/pcqm4m/logs \
+    --checkpoint_dir tokengt_experiments/pcqm4m/checkpoints \
     --num_devices 1 \
     --lr 0.0002 \
     --epochs 300 \
