@@ -97,7 +97,7 @@ def run(rank, dataset, args):
         entity="krecharles-university-of-oxford",
         project="PCQM4M_TokenGT",
         config=vars(args),
-        mode="disabled"
+        # mode="disabled"
     )
 
     num_devices = args.num_devices
@@ -130,7 +130,7 @@ def run(rank, dataset, args):
 
     if rank == 0:
         transform = AddOrthonormalNodeIdentifiers(args.D_P, args.use_laplacian) 
-        root_f = f'/mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
+        root_f = f'data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
         if args.on_disk_dataset:
             valid_dataset = PCQM4Mv2(root=root_f, split="val",
                                      from_smiles=ogb_from_smiles_wrapper,
@@ -144,8 +144,8 @@ def run(rank, dataset, args):
                 from_smiles=ogb_from_smiles_wrapper,
                 transform=transform)
             valid_dataset = valid_dataset[:int(max(1024, len(valid_dataset)*args.dataset_fraction))]
-            test_dev_dataset = test_dev_dataset[:int(max(1024, len(test_dev_dataset)*args.dataset_fraction))]
-            test_challenge_dataset = test_challenge_dataset[:int(max(1024, len(test_challenge_dataset)*args.dataset_fraction))]
+            test_dev_dataset = test_dev_dataset
+            test_challenge_dataset = test_challenge_dataset
         else:
             valid_dataset = dataset[split_idx["valid"]]
             test_dev_dataset = dataset[split_idx["test-dev"]]
@@ -271,6 +271,7 @@ def run(rank, dataset, args):
                         model, DistributedDataParallel) else model
 
                     testdev_pred = test(test_model, device, testdev_loader)
+
                     evaluator.save_test_submission(
                         {'y_pred': testdev_pred.cpu().detach().numpy()},
                         args.save_test_dir,
@@ -352,17 +353,17 @@ if __name__ == "__main__":
     transform = AddOrthonormalNodeIdentifiers(
         args.D_P, args.use_laplacian)
     if args.on_disk_dataset:
-        root_f = f'/mnt/data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
+        root_f = f'data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
         print(f"Saving to {root_f}")
         dataset = PCQM4Mv2(root=root_f, split='train',
                            from_smiles=ogb_from_smiles_wrapper,
                            transform=transform)
     else:
-        dataset = PygPCQM4Mv2Dataset(root='/mnt/data/', transform=transform)
+        dataset = PygPCQM4Mv2Dataset(root='data/', transform=transform)
 
-    # TODO: remove this
-    dataset = dataset.shuffle()[:int(len(dataset)*args.dataset_fraction)]
-    print(f"dataset size: {len(dataset)}")
+    if args.dataset_fraction < 1:
+        dataset = dataset.shuffle()[:int(len(dataset)*args.dataset_fraction)]
+        print(f"dataset size: {len(dataset)}")
 
     if args.num_devices > 1:
         mp.spawn(run, args=(dataset, args), nprocs=args.num_devices, join=True)

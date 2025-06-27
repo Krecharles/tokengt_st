@@ -1,6 +1,6 @@
 #!/bin/bash
 
-rm -r tokengt_experiments/pcqm4m/checkpoints
+# rm -r tokengt_experiments/pcqm4m/checkpoints
 
 python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --model token_gt \
@@ -15,7 +15,7 @@ python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --head_dim 12 \
     --num_heads 24 \
     --num_encoder_layers 8 \
-    --dim_feedforward 288 \
+    --dim_feedforward 192 \
     --dropout_ratio 0.1 \
     --include_graph_token \
     --on_disk_dataset \

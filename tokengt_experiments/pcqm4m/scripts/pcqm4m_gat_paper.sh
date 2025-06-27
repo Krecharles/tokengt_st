@@ -2,7 +2,7 @@
 
 python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --model gat \
-    --checkpoint_dir tokengt_experiments/pcqm4m/checkpoints \
+    --checkpoint_dir tokengt_experiments/pcqm4m/checkpoints_gat_paper \
     --num_devices 1 \
     --lr 0.0002 \
     --epochs 300 \

@@ -2,8 +2,7 @@
 
 python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --model token_gt \
-    --log_dir tokengt_experiments/pcqm4m/logs \
-    --checkpoint_dir tokengt_experiments/pcqm4m/checkpoints \
+    --checkpoint_dir tokengt_experiments/pcqm4m/checkpoints_ort_paper \
     --num_devices 1 \
     --lr 0.0002 \
     --epochs 300 \
@@ -17,4 +16,5 @@ python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --dim_feedforward 768 \
     --dropout_ratio 0.1 \
     --include_graph_token \
+    --dataset_fraction 1 \
     --on_disk_dataset
