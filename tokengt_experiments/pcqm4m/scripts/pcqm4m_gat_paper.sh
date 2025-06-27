@@ -12,5 +12,6 @@ python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --hidden_channels 600 \
     --num_heads 1 \
     --num_encoder_layers 5 \
+    --dropout_ratio 0.1 \
     --on_disk_dataset \
     --dataset_fraction 1
