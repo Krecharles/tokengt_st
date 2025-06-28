@@ -48,18 +48,6 @@ def main():
     torch.cuda.manual_seed_all(42)
     torch.backends.cudnn.deterministic = True
 
-    # TokenGT:
-    # initial_lr = 0.001
-    # lr_reduce_factor = 0.5
-    # minimum_lr = 10^-5
-    # patience = 10
-    # D_P = 16  # TokenGT: 16 for Lap, 64 for ORF
-    # head_dim = 24
-    # num_heads = 32
-    # num_encoder_layers = 12
-    # dim_feedforward = d # TokenGT: 768 = 32 * 24
-    # dropout=0.1
-
     config = {
         "architecture": "TokenGT",
         "dataset": "ZINC_12K",

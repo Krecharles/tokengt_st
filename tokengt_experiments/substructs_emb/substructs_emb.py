@@ -278,46 +278,22 @@ def main(config, run):
 
 
 if __name__ == "__main__":
-    config = {
-        "architecture": "GCN",  # Options: "TokenGT", "GCN"
-        "dataset": "ZINC_12K", 
-        # set substructure_file to "" to use no substructures
-        "substructures_file": "cycles_3_8",
-        "substructure_vns": True,
-        "D_P": 32,
-        "num_heads": 8,
-        "d": 125,
-        "num_encoder_layers": 4,
-        "dim_feedforward": 64,
-        "include_graph_token": True,
-        "use_laplacian": False,
-        "use_one_hot_encoding": True,
-        "batch_norm": True,
-        "dropout": 0.0,
-        "epochs": 100,
-        "lr": 0.001,
-        "lr_reduce_factor": 0.5,
-        "min_lr": 0.00001,
-        "patience": 10,
-        "batch_size": 128,
-        "weight_decay": 0.01,
-    }
     # config = {
-    #     "architecture": "TokenGT",  # Options: "TokenGT", "TokenGT_Sum", "TokenGT_Hyp", "GCN"
+    #     "architecture": "Gcn",  # Options: "TokenGT", "GCN"
     #     "dataset": "ZINC_12K", 
     #     # set substructure_file to "" to use no substructures
     #     "substructures_file": "",
     #     "substructure_vns": False,
     #     "D_P": 32,
     #     "num_heads": 8,
-    #     "d": 64,
+    #     "d": 125,
     #     "num_encoder_layers": 4,
     #     "dim_feedforward": 64,
     #     "include_graph_token": True,
-    #     "use_laplacian": True,
+    #     "use_laplacian": False,
     #     "use_one_hot_encoding": True,
     #     "batch_norm": True,
-    #     "dropout": 0.1,
+    #     "dropout": 0.0,
     #     "epochs": 100,
     #     "lr": 0.001,
     #     "lr_reduce_factor": 0.5,
@@ -326,6 +302,30 @@ if __name__ == "__main__":
     #     "batch_size": 128,
     #     "weight_decay": 0.01,
     # }
+    config = {
+        "architecture": "TokenGT",  # Options: "TokenGT", "TokenGT_Sum", "TokenGT_Hyp", "GCN"
+        "dataset": "ZINC_12K", 
+        # set substructure_file to "" to use no substructures
+        "substructures_file": "",
+        "substructure_vns": False,
+        "D_P": 32,
+        "num_heads": 8,
+        "d": 64,
+        "num_encoder_layers": 4,
+        "dim_feedforward": 64,
+        "include_graph_token": True,
+        "use_laplacian": True,
+        "use_one_hot_encoding": True,
+        "batch_norm": True,
+        "dropout": 0.1,
+        "epochs": 100,
+        "lr": 0.001,
+        "lr_reduce_factor": 0.5,
+        "min_lr": 0.00001,
+        "patience": 10,
+        "batch_size": 8,
+        "weight_decay": 0.01,
+    }
     run = wandb.init(
         entity="krecharles-university-of-oxford",
         project="substructure_embeddings",
