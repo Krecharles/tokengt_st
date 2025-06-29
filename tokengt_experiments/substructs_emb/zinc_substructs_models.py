@@ -4,6 +4,9 @@ from torch_geometric.nn import GCNConv
 from torch_geometric.nn import global_mean_pool
 from torch_geometric.nn import TokenGT
 import torch.nn.functional as F
+from torch_geometric.nn import GPSConv
+from torch_geometric.nn import GINEConv
+from torch_geometric.nn import global_add_pool
 
 from models.token_gt_st_sum import TokenGTST_Sum
 from models.token_gt_st_hyp import TokenGTST_Hyp
@@ -214,9 +217,15 @@ class GCNGraphRegression(nn.Module):
         self.use_one_hot_encoding = use_one_hot_encoding
 
         if self.use_one_hot_encoding:
+            self.atom_encoder = nn.Embedding(
+                num_embeddings = num_embeddings,
+                embedding_dim = hidden_channels,
+            )
+            self.mlp = nn.Linear(dim_node-1, hidden_channels)
             self.conv1 = GCNConv(hidden_channels, hidden_channels)
         else:
             self.conv1 = GCNConv(dim_node, hidden_channels)
+
         self.convs = nn.ModuleList()
         for i in range(num_layers - 1):
             self.convs.append(
@@ -232,13 +241,6 @@ class GCNGraphRegression(nn.Module):
         self.lin1 = nn.Linear(hidden_channels, hidden_channels)
         self.lin2 = nn.Linear(hidden_channels, 1)
 
-        if self.use_one_hot_encoding:
-            # 1-hot encode + linear node features
-            self.atom_encoder = nn.Embedding(
-                num_embeddings = num_embeddings,
-                embedding_dim = hidden_channels-dim_node+1
-            )
-
         self.to(device)
         
         print(f"initialized GCN({num_layers} layers, {hidden_channels} hidden, batch_norm={batch_norm})")
@@ -250,7 +252,8 @@ class GCNGraphRegression(nn.Module):
         if self.use_one_hot_encoding:
             # atom features are the first column of x, other features come later
             atom_features = torch.squeeze(self.atom_encoder(x[:, 0].long()))
-            x = torch.cat([atom_features, x[:, 1:]], dim=1)
+            count_features = self.mlp(x[:, 1:])
+            x = atom_features + count_features
 
         x = self.conv1(x.float(), edge_index)
         if self.batch_norm:
@@ -273,4 +276,78 @@ class GCNGraphRegression(nn.Module):
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.lin2(x)
 
+        return x
+
+class GPS(torch.nn.Module):
+    # https://pytorch-geometric.readthedocs.io/en/latest/tutorial/graph_transformer.html
+    # def __init__(self, channels: int, pe_dim: int, num_layers: int,
+    #             attn_type: str, attn_kwargs: dict, batch_norm: bool = True,
+    #             use_one_hot_encoding: bool = False, dim_node: int = 28, num_embeddings: int = 28):
+    def __init__(self, 
+                dim_node: int,
+                hidden_channels: int,
+                num_layers: int,
+                batch_norm: bool = True,
+                use_one_hot_encoding: bool = False,
+                num_embeddings: int = 28,
+                device: str = "cuda"):
+        super().__init__()
+
+        self.batch_norm = batch_norm
+        self.use_one_hot_encoding = use_one_hot_encoding
+
+        if self.use_one_hot_encoding:
+            self.atom_encoder = nn.Embedding(
+                num_embeddings = num_embeddings,
+                embedding_dim = hidden_channels,
+            )
+            self.mlp = nn.Linear(dim_node-1, hidden_channels)
+        else:
+            self.mlp = nn.Linear(dim_node, hidden_channels)
+
+        self.convs = nn.ModuleList()
+        for _ in range(num_layers):
+            mlp = nn.Sequential(
+                nn.Linear(hidden_channels, hidden_channels),
+                nn.ReLU(),
+                nn.Linear(hidden_channels, hidden_channels)
+            )
+            conv = GPSConv(hidden_channels, GINEConv(mlp), heads=4,
+                        attn_type="multihead")
+            self.convs.append(conv)
+
+        self.lin1 = nn.Linear(hidden_channels, hidden_channels)
+        self.lin2 = nn.Linear(hidden_channels, 1)
+
+        if batch_norm:
+            self.bn_final = nn.BatchNorm1d(hidden_channels)
+
+        self.to(device)
+
+        print(f"initialized GPS({num_layers} layers, {hidden_channels} hidden, batch_norm={batch_norm})")
+
+    def forward(self, batch):
+        x, edge_index, edge_attr, batch_idx = batch.x, batch.edge_index, batch.edge_attr, batch.batch
+
+        if self.use_one_hot_encoding:
+            # atom features are the first column of x, other features come later
+            atom_features = torch.squeeze(self.atom_encoder(x[:, 0].long()))
+            count_features = self.mlp(x[:, 1:].float())
+            x = atom_features + count_features
+        else:
+            x = self.mlp(x.float())
+
+        # add zero edge features
+        edge_attr = torch.zeros(edge_index.shape[1], x.shape[1], device=x.device)
+        for conv in self.convs:
+            x = conv(x, edge_index, batch_idx, edge_attr=edge_attr)
+        
+        x = global_mean_pool(x, batch_idx)
+        
+        if self.batch_norm:
+            x = self.bn_final(x)
+        
+        x = F.relu(self.lin1(x))
+        x = self.lin2(x)
+        
         return x

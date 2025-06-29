@@ -3,6 +3,7 @@ import os.path as osp
 import os
 import pickle
 
+from tokengt_experiments.substructs_emb.zinc_substructs_models import GPS
 import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -173,6 +174,16 @@ def create_model(config, device, dim_node, n_substructures):
             num_embeddings=28+n_substructures,
             device=device,
         )
+    elif config.architecture == "GPS":
+        return GPS(
+            dim_node=dim_node,
+            hidden_channels=config.d,
+            num_layers=config.num_encoder_layers,
+            batch_norm=config.batch_norm,
+            use_one_hot_encoding=config.use_one_hot_encoding,
+            num_embeddings=28+n_substructures,
+            device=device,
+        )
     else:
         raise ValueError(f"Unknown architecture: {config.architecture}")
 
@@ -208,8 +219,6 @@ def main(config, run):
         transform = Compose([
             AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
             AddSubstructureInstances(substructures),
-            # TODO: remove this later
-            AddSubstructureEmbeddings(len(substructures)),
             AddSubstructureMatchesAsVNs(len(substructures)),
         ])
     else:
@@ -278,8 +287,30 @@ def main(config, run):
 
 
 if __name__ == "__main__":
+    config = {
+        "architecture": "GPS",  # Options: "TokenGT", "GCN", "GPS"
+        "dataset": "ZINC_12K", 
+        # set substructure_file to "" to use no substructures
+        "substructures_file": "cycles_3_8",
+        "substructure_vns": True,
+        "use_one_hot_encoding": True,
+        "num_heads": 8,
+        "d": 32,
+        "num_encoder_layers": 6,
+        "D_P": 32,
+        "use_laplacian": False,
+        "batch_norm": True,
+
+        "epochs": 100,
+        "lr": 0.001,
+        "lr_reduce_factor": 0.5,
+        "min_lr": 0.00001,
+        "patience": 10,
+        "batch_size": 128,
+        "weight_decay": 0.01,
+    }
     # config = {
-    #     "architecture": "Gcn",  # Options: "TokenGT", "GCN"
+    #     "architecture": "GCN",  # Options: "TokenGT", "GCN", "GPS"
     #     "dataset": "ZINC_12K", 
     #     # set substructure_file to "" to use no substructures
     #     "substructures_file": "",
@@ -302,30 +333,30 @@ if __name__ == "__main__":
     #     "batch_size": 128,
     #     "weight_decay": 0.01,
     # }
-    config = {
-        "architecture": "TokenGT",  # Options: "TokenGT", "TokenGT_Sum", "TokenGT_Hyp", "GCN"
-        "dataset": "ZINC_12K", 
-        # set substructure_file to "" to use no substructures
-        "substructures_file": "",
-        "substructure_vns": False,
-        "D_P": 32,
-        "num_heads": 8,
-        "d": 64,
-        "num_encoder_layers": 4,
-        "dim_feedforward": 64,
-        "include_graph_token": True,
-        "use_laplacian": True,
-        "use_one_hot_encoding": True,
-        "batch_norm": True,
-        "dropout": 0.1,
-        "epochs": 100,
-        "lr": 0.001,
-        "lr_reduce_factor": 0.5,
-        "min_lr": 0.00001,
-        "patience": 10,
-        "batch_size": 8,
-        "weight_decay": 0.01,
-    }
+    # config = {
+    #     "architecture": "TokenGT",  # Options: "TokenGT", "TokenGT_Sum", "TokenGT_Hyp", "GCN"
+    #     "dataset": "ZINC_12K", 
+    #     # set substructure_file to "" to use no substructures
+    #     "substructures_file": "",
+    #     "substructure_vns": False,
+    #     "D_P": 32,
+    #     "num_heads": 8,
+    #     "d": 64,
+    #     "num_encoder_layers": 4,
+    #     "dim_feedforward": 64,
+    #     "include_graph_token": True,
+    #     "use_laplacian": True,
+    #     "use_one_hot_encoding": True,
+    #     "batch_norm": True,
+    #     "dropout": 0.1,
+    #     "epochs": 100,
+    #     "lr": 0.001,
+    #     "lr_reduce_factor": 0.5,
+    #     "min_lr": 0.00001,
+    #     "patience": 10,
+    #     "batch_size": 8,
+    #     "weight_decay": 0.01,
+    # }
     run = wandb.init(
         entity="krecharles-university-of-oxford",
         project="substructure_embeddings",
