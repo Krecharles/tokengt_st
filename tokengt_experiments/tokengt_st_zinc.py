@@ -18,7 +18,7 @@ import random
 import networkx as nx
 
 from models.add_substructure_instances import AddSubstructureInstances
-from tokengt_experiments.exp_models import TokenGTGraphRegression, TokenGTSTSumGraphRegression, TokenGTSTHypGraphRegression, GCNGraphRegression
+from tokengt_experiments.exp_models import TokenGTGraphRegression, TokenGTSTSumGraphRegression, TokenGTSTHypGraphRegression
 
 
 def train(model, loader, criterion, optimizer):
@@ -26,12 +26,7 @@ def train(model, loader, criterion, optimizer):
     total_loss = 0.0
     for batch in loader:
         optimizer.zero_grad()
-
-        if isinstance(model, (TokenGTSTSumGraphRegression, TokenGTSTHypGraphRegression)):
-            out = model(batch, batch.substructure_instances)
-        else:
-            out = model(batch)
-
+        out = model(batch)
         loss = criterion(out, batch.y.unsqueeze(1))
         loss.backward()
         optimizer.step()
@@ -44,11 +39,7 @@ def get_loss(model, loader, criterion) -> float:
     total_loss = 0.0
     with torch.no_grad():
         for batch in loader:
-            if isinstance(model, (TokenGTSTSumGraphRegression, TokenGTSTHypGraphRegression)):
-                out = model(batch, batch.substructure_instances)
-            else:
-                out = model(batch)
-
+            out = model(batch)
             loss = criterion(out, batch.y.unsqueeze(1)).item()
             total_loss += loss
     return total_loss / len(loader.dataset)
@@ -111,14 +102,6 @@ def create_model(config, train_dataset, device, n_substructures):
             device=device,
             n_substructures=n_substructures
         )
-    elif config.architecture == "GCN":
-        return GCNGraphRegression(
-            dim_node=train_dataset.num_node_features,
-            hidden_channels=config.d,
-            num_layers=config.num_encoder_layers,
-            dropout=config.dropout,
-            device=device,
-        )
     else:
         raise ValueError(f"Unknown architecture: {config.architecture}")
 
@@ -131,28 +114,28 @@ def main():
     # torch.backends.cudnn.deterministic = True
 
     config = {
-        "architecture": "TokenGT",
+        "architecture": "TokenGTST_Hyp",
         "dataset": "ZINC_12K",
         "use_features": True,
-        "D_P": 64,
+        "D_P": 32,
         "num_heads": 8,
-        "d": 32,
-        "num_encoder_layers": 3,
-        "dim_feedforward": 32,
+        "d": 64,
+        "num_encoder_layers": 4,
+        "dim_feedforward": 64,
         "include_graph_token": True,
         "use_laplacian": False,
         "dropout": 0.1,
         "epochs": 200,
         "lr": 0.001,
         "batch_size": 128,
-        "substructures_file": "subs_size6",
+        "substructures_file": "cycles_3_8",
     }
 
     run = wandb.init(
         entity="krecharles-university-of-oxford",
         project="TokenGTST",
         config=config,
-        # mode="disabled"
+        mode="disabled"
     )
 
     config = wandb.config

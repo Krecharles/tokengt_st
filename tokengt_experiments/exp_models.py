@@ -69,11 +69,12 @@ class TokenGTSTSumGraphRegression(nn.Module):
         dim_edge,
         dropout,
         device,
-        n_substructures
+        n_substructures,
+        num_embeddings=28
     ):
         super().__init__()
         self._token_gt = TokenGTST_Sum(
-            dim_node=dim_node,
+            dim_node=d, # because the 1-hot encoding expands the node features to d
             d_p=d_p,
             d=d,
             num_heads=num_heads,
@@ -86,17 +87,26 @@ class TokenGTSTSumGraphRegression(nn.Module):
             device=device,
             n_substructures=n_substructures
         )
+        # 1-hot encode
+        self.atom_encoder = nn.Embedding(
+            num_embeddings = num_embeddings,
+            embedding_dim = d
+        )
         self.lm = nn.Linear(d, 1, device=device)
         print(f"initialized TokenGTST_Sum({n_substructures})")
 
-    def forward(self, batch, substructure_instances=None):
-        _, graph_emb = self._token_gt(batch.x.float(),
+    def forward(self, batch):
+        
+        assert batch.x.shape[1] == 1, "TokenGTST_Sum expects a single atom feature"
+        atom_features = torch.squeeze(self.atom_encoder(batch.x.long()))
+        _, graph_emb = self._token_gt(atom_features,
                                       batch.edge_index,
                                       batch.edge_attr.unsqueeze(1).float(),
                                       batch.ptr,
                                       batch.batch,
                                       batch.node_ids,
-                                      substructure_instances)
+                                      batch.substructure_instances,
+                                      batch.n_substructure_instances)
         return self.lm(graph_emb)
 
 
@@ -116,11 +126,12 @@ class TokenGTSTHypGraphRegression(nn.Module):
         dim_edge,
         dropout,
         device,
-        n_substructures
+        n_substructures,
+        num_embeddings=28
     ):
         super().__init__()
         self._token_gt = TokenGTST_Hyp(
-            dim_node=dim_node,
+            dim_node=d, # because the 1-hot encoding expands the node features to d
             d_p=d_p,
             d=d,
             num_heads=num_heads,
@@ -133,17 +144,26 @@ class TokenGTSTHypGraphRegression(nn.Module):
             device=device,
             n_substructures=n_substructures
         )
+        # 1-hot encode
+        self.atom_encoder = nn.Embedding(
+            num_embeddings = num_embeddings,
+            embedding_dim = d
+        )
         self.lm = nn.Linear(d, 1, device=device)
         print(f"initialized TokenGTST_Hyp({n_substructures})")
 
-    def forward(self, batch, substructure_instances=None):
-        _, graph_emb = self._token_gt(batch.x.float(),
+    def forward(self, batch):
+        
+        assert batch.x.shape[1] == 1, "TokenGTST_Hyp expects a single atom feature"
+        atom_features = torch.squeeze(self.atom_encoder(batch.x.long()))
+        _, graph_emb = self._token_gt(atom_features,
                                       batch.edge_index,
                                       batch.edge_attr.unsqueeze(1).float(),
                                       batch.ptr,
                                       batch.batch,
                                       batch.node_ids,
-                                      substructure_instances)
+                                      batch.substructure_instances,
+                                      batch.n_substructure_instances)
         return self.lm(graph_emb)
 
 

@@ -189,9 +189,10 @@ class TokenGTST_Sum(TokenGT):
         substrs_node_ids_sum = substrs_node_ids.sum(dim=1)
 
         type_ids = self._type_id_enc.weight[2 + keys]
-        node_ids_prj = torch.concat([substrs_node_ids_sum, substrs_node_ids_sum], dim=1)
+        node_ids_concat = torch.concat([substrs_node_ids_sum, substrs_node_ids_sum], dim=1)
+        node_ids_enc = self._node_id_enc(node_ids_concat)
 
-        return type_ids + node_ids_prj
+        return type_ids + node_ids_enc
 
 
     @staticmethod
