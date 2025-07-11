@@ -21,6 +21,8 @@ from torch_geometric.io import fs
 import wandb
 import torch.optim.lr_scheduler as lr_scheduler
 
+from torch.cuda.amp import GradScaler, autocast
+
 from ogb.lsc import PCQM4Mv2Evaluator, PygPCQM4Mv2Dataset
 
 from ogb.utils import smiles2graph
@@ -41,7 +43,7 @@ def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
     )
 
 
-def train(model, rank, device, loader, optimizer):
+def train(model, rank, device, loader, optimizer, scaler=None, use_fp16=False):
     model.train()
     reg_criterion = torch.nn.L1Loss()
     loss_accum = 0.0
@@ -49,24 +51,42 @@ def train(model, rank, device, loader, optimizer):
     for step, batch in enumerate(
             tqdm(loader, desc="Training", disable=(rank > 0))):
         batch = batch.to(device)
-        pred = model(batch).view(-1, )
+        
         optimizer.zero_grad()
-        loss = reg_criterion(pred, batch.y)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-        optimizer.step()
+        
+        if use_fp16 and scaler is not None:
+            with autocast():
+                pred = model(batch).view(-1, )
+                loss = reg_criterion(pred, batch.y)
+            
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            pred = model(batch).view(-1, )
+            loss = reg_criterion(pred, batch.y)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            optimizer.step()
+            
         loss_accum += loss.detach().cpu().item()
     return loss_accum / (step + 1)
 
 
-def eval(model, device, loader, evaluator):
+def eval(model, device, loader, evaluator, use_fp16=False):
     model.eval()
     y_true = []
     y_pred = []
     for batch in tqdm(loader, desc="Evaluating"):
         batch = batch.to(device)
         with torch.no_grad():
-            pred = model(batch).view(-1, )
+            if use_fp16:
+                with autocast():
+                    pred = model(batch).view(-1, )
+            else:
+                pred = model(batch).view(-1, )
 
         y_true.append(batch.y.view(pred.shape).detach().cpu())
         y_pred.append(pred.detach().cpu())
@@ -77,13 +97,17 @@ def eval(model, device, loader, evaluator):
     return evaluator.eval(input_dict)["mae"]
 
 
-def test(model, device, loader):
+def test(model, device, loader, use_fp16=False):
     model.eval()
     y_pred = []
     for batch in tqdm(loader, desc="Testing"):
         batch = batch.to(device)
         with torch.no_grad():
-            pred = model(batch).view(-1, )
+            if use_fp16:
+                with autocast():
+                    pred = model(batch).view(-1, )
+            else:
+                pred = model(batch).view(-1, )
 
         y_pred.append(pred.detach().cpu())
 
@@ -215,6 +239,8 @@ def run(rank, dataset, args):
 
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
+    scaler = GradScaler() if args.fp16 else None
+
     best_valid_mae = 1000
     # Scheduler: linear warmup to args.lr, then linear decay to 0
     scheduler1 = lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1, total_iters=args.warmup_epochs)
@@ -235,7 +261,7 @@ def run(rank, dataset, args):
         print(f"Found checkpoint, resume training at epoch {current_epoch}")
 
     for epoch in range(current_epoch, args.epochs + 1):
-        train_mae = train(model, rank, device, train_loader, optimizer)
+        train_mae = train(model, rank, device, train_loader, optimizer, scaler, args.fp16)
 
         if num_devices > 1:
             dist.barrier()
@@ -243,7 +269,7 @@ def run(rank, dataset, args):
         if rank == 0:
             valid_mae = eval(
                 model.module if isinstance(model, DistributedDataParallel) else
-                model, device, valid_loader, evaluator)
+                model, device, valid_loader, evaluator, args.fp16)
 
             print(f"Epoch {epoch:02d}, "
                   f"Train MAE: {train_mae:.4f}, "
@@ -270,7 +296,7 @@ def run(rank, dataset, args):
                     test_model = model.module if isinstance(
                         model, DistributedDataParallel) else model
 
-                    testdev_pred = test(test_model, device, testdev_loader)
+                    testdev_pred = test(test_model, device, testdev_loader, args.fp16)
 
                     evaluator.save_test_submission(
                         {'y_pred': testdev_pred.cpu().detach().numpy()},
@@ -279,7 +305,7 @@ def run(rank, dataset, args):
                     )
 
                     testchallenge_pred = test(test_model, device,
-                                              testchallenge_loader)
+                                              testchallenge_loader, args.fp16)
                     evaluator.save_test_submission(
                         {'y_pred': testchallenge_pred.cpu().detach().numpy()},
                         args.save_test_dir,
@@ -317,6 +343,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_devices', type=int, default='1',
                         help="Number of GPUs, if 0 runs on the CPU")
     parser.add_argument('--on_disk_dataset', action='store_true')
+    parser.add_argument('--fp16', action='store_true', help='Use mixed precision training (fp16)')
 
     parser.add_argument('--lr', type=float, default=0.0002)
     parser.add_argument('--weight_decay', type=float, default=0.0)
