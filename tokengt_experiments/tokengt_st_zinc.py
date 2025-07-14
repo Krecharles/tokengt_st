@@ -1,20 +1,14 @@
-import os.path as osp
-import os
 import pickle
-from typing import Optional
 
 import torch
 import torch.nn as nn
-from torch import Tensor
 
 from torch_geometric.datasets import ZINC
 from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import AddOrthonormalNodeIdentifiers
 
-import numpy as np
 from torch_geometric.transforms.compose import Compose
 import wandb
-import random
 import networkx as nx
 
 from models.add_substructure_instances import AddSubstructureInstances
@@ -107,14 +101,9 @@ def create_model(config, train_dataset, device, n_substructures):
 
 
 def main():
-    # torch.manual_seed(42)
-    # np.random.seed(42)
-    # random.seed(42)
-    # torch.cuda.manual_seed_all(42)
-    # torch.backends.cudnn.deterministic = True
 
     config = {
-        "architecture": "TokenGTST_Hyp",
+        "architecture": "TokenGT",
         "dataset": "ZINC_12K",
         "use_features": True,
         "D_P": 32,
@@ -127,8 +116,8 @@ def main():
         "dropout": 0.1,
         "epochs": 200,
         "lr": 0.001,
-        "batch_size": 128,
-        "substructures_file": "cycles_3_8",
+        "batch_size": 8,
+        "substructures_file": "",
     }
 
     run = wandb.init(
@@ -140,16 +129,23 @@ def main():
 
     config = wandb.config
 
-    substructures = load_substructures(
-        f"tokengt_experiments/{config.substructures_file}.pkl")
+    if config.substructures_file == "":
+        substructures = []
+    else:
+        substructures = load_substructures(
+            f"tokengt_experiments/{config.substructures_file}.pkl")
 
     transform = Compose([AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
                          AddSubstructureInstances(substructures)])
 
     train_dataset = ZINC(f"data/ZINC-lap-{config.substructures_file}-{config.D_P}", subset=True,
                          split="train", pre_transform=transform)
+
     val_dataset = ZINC(f"data/ZINC-lap-{config.substructures_file}-{config.D_P}", subset=True,
                        split="val", pre_transform=transform)
+
+    test_dataset = ZINC(f"data/ZINC-lap-{config.substructures_file}-{config.D_P}", subset=True,
+                       split="test", pre_transform=transform)
 
     if not config.use_features:
         train_dataset.data.x = torch.zeros(
@@ -167,16 +163,19 @@ def main():
     if torch.cuda.is_available():
         train_dataset.cuda()
         val_dataset.cuda()
-
+        test_dataset.cuda()
+    
     print(f"Training with {len(train_dataset)} samples")
 
     train_loader = DataLoader(
         train_dataset, batch_size=config.batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=config.batch_size)
+    test_loader = DataLoader(test_dataset, batch_size=config.batch_size)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = create_model(config, train_dataset, device, len(substructures))
+    model.to(device)
 
     num_params = sum(p.numel() for p in model.parameters())
     print(f"Number of params: {num_params}")
@@ -196,6 +195,10 @@ def main():
         val_loss = get_loss(model, val_loader, criterion)
         print(f"Epoch {i}: train_loss={train_loss:.5f} val_loss={val_loss:.5f}")
         run.log({"train_loss": train_loss, "val_loss": val_loss}, step=i)
+
+    test_loss = get_loss(model, test_loader, criterion)
+    print(f"Test loss: {test_loss:.5f}")
+    run.log({"test_loss": test_loss})
 
     save_path = f"trained_models/{config.architecture}_{config.dataset}_{config.substructures_file}.pt"
     torch.save(model, save_path)

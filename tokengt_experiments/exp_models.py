@@ -26,10 +26,11 @@ class TokenGTGraphRegression(nn.Module):
         dim_edge,
         dropout,
         device,
+        num_embeddings=28
     ):
         super().__init__()
         self._token_gt = TokenGT(
-            dim_node=dim_node,
+            dim_node=d, # because the 1-hot encoding expands the node features to d
             dim_edge=dim_edge,
             d_p=d_p,
             d=d,
@@ -41,12 +42,22 @@ class TokenGTGraphRegression(nn.Module):
             dropout=dropout,
             device=device,
         )
+        # 1-hot encode
+        self.atom_encoder = nn.Embedding(
+            num_embeddings = num_embeddings,
+            embedding_dim = d
+        )
         self.lm = nn.Linear(d, 1, device=device)
+        print(f"initialized TokenGT({d} node features, {dim_edge} edge features, {d} hidden, {num_heads} heads, {num_encoder_layers} layers, {dim_feedforward} feedforward, {include_graph_token} graph token, {is_laplacian_node_ids} laplacian node ids, {dropout} dropout)")
 
     def forward(self, batch):
-        _, graph_emb = self._token_gt(batch.x.float(),
+        
+        assert batch.x.shape[1] == 1, "TokenGT expects a single atom feature"
+        atom_features = torch.squeeze(self.atom_encoder(batch.x.long()))
+        edge_attr = torch.zeros_like(batch.edge_attr)
+        _, graph_emb = self._token_gt(atom_features,
                                       batch.edge_index,
-                                      batch.edge_attr.float(),
+                                      edge_attr.unsqueeze(1).float(),
                                       batch.ptr,
                                       batch.batch,
                                       batch.node_ids)
@@ -99,9 +110,10 @@ class TokenGTSTSumGraphRegression(nn.Module):
         
         assert batch.x.shape[1] == 1, "TokenGTST_Sum expects a single atom feature"
         atom_features = torch.squeeze(self.atom_encoder(batch.x.long()))
+        edge_attr = torch.zeros_like(batch.edge_attr)
         _, graph_emb = self._token_gt(atom_features,
                                       batch.edge_index,
-                                      batch.edge_attr.unsqueeze(1).float(),
+                                      edge_attr.unsqueeze(1).float(),
                                       batch.ptr,
                                       batch.batch,
                                       batch.node_ids,
@@ -156,9 +168,10 @@ class TokenGTSTHypGraphRegression(nn.Module):
         
         assert batch.x.shape[1] == 1, "TokenGTST_Hyp expects a single atom feature"
         atom_features = torch.squeeze(self.atom_encoder(batch.x.long()))
+        edge_attr = torch.zeros_like(batch.edge_attr)
         _, graph_emb = self._token_gt(atom_features,
                                       batch.edge_index,
-                                      batch.edge_attr.unsqueeze(1).float(),
+                                      edge_attr.unsqueeze(1).float(),
                                       batch.ptr,
                                       batch.batch,
                                       batch.node_ids,
