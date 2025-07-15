@@ -12,7 +12,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel
-from torch_geometric.transforms.add_orthornormal_node_identifiers import AddOrthonormalNodeIdentifiers
+from torch_geometric.transforms.add_laplacian_node_identifiers import AddLaplacianNodeIdentifiers
 from tqdm.auto import tqdm
 
 from torch_geometric.data import Data, DataLoader
@@ -43,7 +43,7 @@ def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
     )
 
 
-def train(model, rank, device, loader, optimizer, scaler=None, use_fp16=False):
+def train(model, rank, device, loader, optimizer, scheduler, scaler=None, use_fp16=False):
     model.train()
     reg_criterion = torch.nn.L1Loss()
     loss_accum = 0.0
@@ -71,6 +71,8 @@ def train(model, rank, device, loader, optimizer, scaler=None, use_fp16=False):
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             optimizer.step()
             
+        scheduler.step()
+        print(f"learning rate: {optimizer.param_groups[0]['lr']}")
         loss_accum += loss.detach().cpu().item()
     return loss_accum / (step + 1)
 
@@ -121,7 +123,7 @@ def run(rank, dataset, args):
         entity="krecharles-university-of-oxford",
         project="PCQM4M_TokenGT",
         config=vars(args),
-        # mode="disabled"
+        mode="disabled"
     )
 
     num_devices = args.num_devices
@@ -153,7 +155,10 @@ def run(rank, dataset, args):
     )
 
     if rank == 0:
-        transform = AddOrthonormalNodeIdentifiers(args.D_P, args.use_laplacian) 
+        if args.use_laplacian:
+            transform = AddLaplacianNodeIdentifiers(args.D_P) 
+        else:
+            transform = None
         root_f = f'data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
         if args.on_disk_dataset:
             valid_dataset = PCQM4Mv2(root=root_f, split="val",
@@ -208,7 +213,7 @@ def run(rank, dataset, args):
         num_encoder_layers=args.num_encoder_layers,
         dim_feedforward=args.dim_feedforward,
         include_graph_token=args.include_graph_token,
-        is_laplacian_node_ids=args.use_laplacian,
+        use_laplacian_node_ids=args.use_laplacian,
         dropout=args.dropout_ratio,
         device=device,
     )
@@ -237,16 +242,16 @@ def run(rank, dataset, args):
     if num_devices > 1:
         model = DistributedDataParallel(model, device_ids=[rank])
 
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=args.weight_decay)
 
     scaler = GradScaler() if args.fp16 else None
 
     best_valid_mae = 1000
     # Scheduler: linear warmup to args.lr, then linear decay to 0
-    scheduler1 = lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1, total_iters=args.warmup_epochs)
-    scheduler2 = lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=0.0, total_iters=args.epochs-args.warmup_epochs)
+    scheduler1 = lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1, total_iters=args.warmup_epochs*len(train_dataset))
+    scheduler2 = lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=0.0, total_iters=(args.epochs-args.warmup_epochs)*len(train_dataset))
 
-    scheduler = lr_scheduler.SequentialLR(optimizer, schedulers=[scheduler1, scheduler2], milestones=[args.warmup_epochs])
+    scheduler = lr_scheduler.SequentialLR(optimizer, schedulers=[scheduler1, scheduler2], milestones=[args.warmup_epochs*len(train_dataset)])
 
     current_epoch = 1
 
@@ -261,7 +266,8 @@ def run(rank, dataset, args):
         print(f"Found checkpoint, resume training at epoch {current_epoch}")
 
     for epoch in range(current_epoch, args.epochs + 1):
-        train_mae = train(model, rank, device, train_loader, optimizer, scaler, args.fp16)
+        print(f"learning rate: {optimizer.param_groups[0]['lr']}")
+        train_mae = train(model, rank, device, train_loader, optimizer, scheduler, scaler, args.fp16)
 
         if num_devices > 1:
             dist.barrier()
@@ -317,7 +323,6 @@ def run(rank, dataset, args):
         if rank == 0:
             print(f"learning rate: {optimizer.param_groups[0]['lr']}")
             wandb.log({"learning_rate": optimizer.param_groups[0]['lr']}, step=epoch)
-            scheduler.step()
         if num_devices > 1:
             dist.barrier()
         
@@ -376,17 +381,19 @@ if __name__ == "__main__":
             raise ValueError(f"Cannot train with {args.num_devices} GPUs: "
                              f"available GPUs count {available_gpus}")
 
-    # automatic dataloading and splitting
-    transform = AddOrthonormalNodeIdentifiers(
-        args.D_P, args.use_laplacian)
+    
+    if args.use_laplacian:
+        transform = AddLaplacianNodeIdentifiers(args.D_P) 
+    else:
+        transform = None
+    root_f = f'data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
     if args.on_disk_dataset:
-        root_f = f'data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
         print(f"Saving to {root_f}")
         dataset = PCQM4Mv2(root=root_f, split='train',
                            from_smiles=ogb_from_smiles_wrapper,
                            transform=transform)
     else:
-        dataset = PygPCQM4Mv2Dataset(root='data/', transform=transform)
+        dataset = PygPCQM4Mv2Dataset(root=root_f, transform=transform)
 
     if args.dataset_fraction < 1:
         dataset = dataset.shuffle()[:int(len(dataset)*args.dataset_fraction)]

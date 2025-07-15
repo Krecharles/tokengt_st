@@ -22,7 +22,7 @@ class TokenGTGraphRegression(nn.Module):
         num_encoder_layers,
         dim_feedforward,
         include_graph_token,
-        is_laplacian_node_ids,
+        use_laplacian_node_ids,
         dim_edge,
         dropout,
         device,
@@ -37,7 +37,7 @@ class TokenGTGraphRegression(nn.Module):
             num_heads=num_heads,
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
-            is_laplacian_node_ids=is_laplacian_node_ids,
+            use_laplacian_node_ids=use_laplacian_node_ids,
             include_graph_token=include_graph_token,
             dropout=dropout,
             device=device,
@@ -48,7 +48,7 @@ class TokenGTGraphRegression(nn.Module):
             embedding_dim = d
         )
         self.lm = nn.Linear(d, 1, device=device)
-        print(f"initialized TokenGT({d} node features, {dim_edge} edge features, {d} hidden, {num_heads} heads, {num_encoder_layers} layers, {dim_feedforward} feedforward, {include_graph_token} graph token, {is_laplacian_node_ids} laplacian node ids, {dropout} dropout)")
+        print(f"initialized TokenGT({d} node features, {dim_edge} edge features, {d} hidden, {num_heads} heads, {num_encoder_layers} layers, {dim_feedforward} feedforward, {include_graph_token} graph token, {use_laplacian_node_ids} laplacian node ids, {dropout} dropout)")
 
     def forward(self, batch):
         
@@ -60,7 +60,7 @@ class TokenGTGraphRegression(nn.Module):
                                       edge_attr.unsqueeze(1).float(),
                                       batch.ptr,
                                       batch.batch,
-                                      batch.node_ids)
+                                      batch.node_ids if self._token_gt._use_laplacian_node_ids else None)
         return self.lm(graph_emb)
 
 
@@ -76,7 +76,7 @@ class TokenGTSTSumGraphRegression(nn.Module):
         num_encoder_layers,
         dim_feedforward,
         include_graph_token,
-        is_laplacian_node_ids,
+        use_laplacian_node_ids,
         dim_edge,
         dropout,
         device,
@@ -92,7 +92,7 @@ class TokenGTSTSumGraphRegression(nn.Module):
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
             dim_edge=dim_edge,
-            is_laplacian_node_ids=is_laplacian_node_ids,
+            use_laplacian_node_ids=use_laplacian_node_ids,
             include_graph_token=include_graph_token,
             dropout=dropout,
             device=device,
@@ -134,7 +134,7 @@ class TokenGTSTHypGraphRegression(nn.Module):
         num_encoder_layers,
         dim_feedforward,
         include_graph_token,
-        is_laplacian_node_ids,
+        use_laplacian_node_ids,
         dim_edge,
         dropout,
         device,
@@ -150,7 +150,7 @@ class TokenGTSTHypGraphRegression(nn.Module):
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
             dim_edge=dim_edge,
-            is_laplacian_node_ids=is_laplacian_node_ids,
+            use_laplacian_node_ids=use_laplacian_node_ids,
             include_graph_token=include_graph_token,
             dropout=dropout,
             device=device,

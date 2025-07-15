@@ -22,7 +22,7 @@ class TokenGTGraphRegression(nn.Module):
         num_encoder_layers,
         dim_feedforward,
         include_graph_token,
-        is_laplacian_node_ids,
+        use_laplacian_node_ids,
         dropout,
         device,
     ):
@@ -35,7 +35,7 @@ class TokenGTGraphRegression(nn.Module):
             num_heads=num_heads,
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
-            is_laplacian_node_ids=is_laplacian_node_ids,
+            use_laplacian_node_ids=use_laplacian_node_ids,
             include_graph_token=include_graph_token,
             dropout=dropout,
             device=device,
@@ -59,7 +59,7 @@ class TokenGTGraphRegression(nn.Module):
                                       edge_attr,
                                       batch.ptr,
                                       batch.batch,
-                                      batch.node_ids)
+                                      batch.node_ids if self._token_gt._use_laplacian_node_ids else None)
         return self.lm(graph_emb)
 
 class GCNGraphRegression(nn.Module):
