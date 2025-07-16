@@ -12,7 +12,7 @@ from typing import List
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
-from tokengt_experiments.qm9.qm9_models import TokenGTGraphRegression, TokenGTSTSumGraphRegression
+from tokengt_experiments.qm9.qm9_models import GCNGraphRegression, TokenGTGraphRegression, TokenGTSTSumGraphRegression
 
 
 class AddSmartsInstances(BaseTransform):
@@ -45,10 +45,11 @@ class AddSmartsInstances(BaseTransform):
         return data
 
 
-def train(model, loader, criterion, optimizer, target_idx=0):
+def train(model, loader, criterion, optimizer, target_idx=0, device=None):
     model.train()
     total_loss = 0.0
-    for batch in tqdm(loader):
+    for batch in tqdm(loader, desc="Training"):
+        batch = batch.to(device)
         optimizer.zero_grad()
         out = model(batch)
         # QM9 has 19 targets, select one for training
@@ -60,11 +61,12 @@ def train(model, loader, criterion, optimizer, target_idx=0):
     return total_loss / len(loader.dataset)
 
 
-def get_loss(model, loader, criterion, target_idx=0) -> float:
+def get_loss(model, loader, criterion, target_idx=0, device=None) -> float:
     model.eval()
     total_loss = 0.0
     with torch.no_grad():
         for batch in loader:
+            batch = batch.to(device)
             out = model(batch)
             target = batch.y[:, target_idx].unsqueeze(1)
             loss = criterion(out, target).item()
@@ -125,6 +127,14 @@ def create_model(config, n_substructures, device):
             device=device,
             n_substructures=n_substructures
         )
+    elif config.architecture == "GCN":
+        return GCNGraphRegression(
+            hidden_channels=config.d,
+            num_layers=config.num_encoder_layers,
+            dropout=config.dropout,
+            batch_norm=True,
+            device=device,
+        )
     # elif config.architecture == "TokenGTST_Hyp":
     #     return TokenGTSTHypGraphRegression(
     #         dim_node=num_node_features,
@@ -146,7 +156,7 @@ def create_model(config, n_substructures, device):
 
 def main():
     config = {
-        "architecture": "TokenGT",
+        "architecture": "GCN",
         "dataset": "QM9",
         "D_P": 32,
         "num_heads": 8,
@@ -179,9 +189,11 @@ def main():
         AddSmartsInstances(smarts_patterns)
     ])
 
+    print("Loading dataset...")
     root_f = f"data/qm9_{'_'.join(smarts_patterns)}"
     dataset = QM9(root=root_f, pre_transform=transform)
     dataset = dataset.shuffle()
+    print("Dataset loaded")
     
     total_size = len(dataset)
     train_size = int(0.8 * total_size)
@@ -222,13 +234,13 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr)
 
     for i in range(1, config.epochs + 1):
-        train_loss = train(model, train_loader, criterion, optimizer, config.target_idx)
-        val_loss = get_loss(model, val_loader, criterion, config.target_idx)
+        train_loss = train(model, train_loader, criterion, optimizer, config.target_idx, device)
+        val_loss = get_loss(model, val_loader, criterion, config.target_idx, device)
         print(f"Epoch {i}: train_loss={train_loss:.5f} val_loss={val_loss:.5f}")
         run.log({"train_loss": train_loss, "val_loss": val_loss}, step=i)
 
     # Final test evaluation
-    test_loss = get_loss(model, test_loader, criterion, config.target_idx)
+    test_loss = get_loss(model, test_loader, criterion, config.target_idx, device)
     print(f"Test loss: {test_loss:.5f}")
     run.log({"test_loss": test_loss})
 
