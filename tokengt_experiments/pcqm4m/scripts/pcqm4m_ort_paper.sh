@@ -11,6 +11,7 @@ python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --weight_decay 0.1 \
     --batch_size 900 \
     --D_P 64 \
+    --node_id_mode orf \
     --head_dim 24 \
     --num_heads 32 \
     --num_encoder_layers 12 \

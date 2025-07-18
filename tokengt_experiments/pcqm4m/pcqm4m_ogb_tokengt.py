@@ -12,7 +12,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel
-from torch_geometric.transforms.add_laplacian_node_identifiers import AddLaplacianNodeIdentifiers
+from torch_geometric.transforms import AddLaplacianNodeIdentifiers, AddPrecomputedORFNodeIdentifiers
 from tqdm.auto import tqdm
 
 from torch_geometric.data import Data, DataLoader
@@ -72,7 +72,6 @@ def train(model, rank, device, loader, optimizer, scheduler, scaler=None, use_fp
             optimizer.step()
             
         scheduler.step()
-        print(f"learning rate: {optimizer.param_groups[0]['lr']}")
         loss_accum += loss.detach().cpu().item()
     return loss_accum / (step + 1)
 
@@ -123,7 +122,7 @@ def run(rank, dataset, args):
         entity="krecharles-university-of-oxford",
         project="PCQM4M_TokenGT",
         config=vars(args),
-        mode="disabled"
+        # mode="disabled"
     )
 
     num_devices = args.num_devices
@@ -155,11 +154,13 @@ def run(rank, dataset, args):
     )
 
     if rank == 0:
-        if args.use_laplacian:
+        if args.node_id_mode == "laplacian":
             transform = AddLaplacianNodeIdentifiers(args.D_P) 
+        elif args.node_id_mode == "orf":
+            transform = AddPrecomputedORFNodeIdentifiers(args.D_P)
         else:
             transform = None
-        root_f = f'data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
+        root_f = f'data/pcqm4m_{args.D_P}_{args.node_id_mode}'
         if args.on_disk_dataset:
             valid_dataset = PCQM4Mv2(root=root_f, split="val",
                                      from_smiles=ogb_from_smiles_wrapper,
@@ -213,7 +214,7 @@ def run(rank, dataset, args):
         num_encoder_layers=args.num_encoder_layers,
         dim_feedforward=args.dim_feedforward,
         include_graph_token=args.include_graph_token,
-        use_laplacian_node_ids=args.use_laplacian,
+        node_id_mode=args.node_id_mode,
         dropout=args.dropout_ratio,
         device=device,
     )
@@ -353,7 +354,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=0.0002)
     parser.add_argument('--weight_decay', type=float, default=0.0)
 
-    parser.add_argument('--use_laplacian', action='store_true')
+    parser.add_argument('--node_id_mode', type=str, default='orf', choices=['laplacian', 'orf', 'precomputed_orf'])
     parser.add_argument('--D_P', type=int, default=64,
                         help='Positional encoding dimension (e.g., 16 for LapPE, 64 for ORF)')
     parser.add_argument('--head_dim', type=int, default=24,
@@ -382,11 +383,13 @@ if __name__ == "__main__":
                              f"available GPUs count {available_gpus}")
 
     
-    if args.use_laplacian:
+    if args.node_id_mode == "laplacian":
         transform = AddLaplacianNodeIdentifiers(args.D_P) 
+    elif args.node_id_mode == "orf":
+        transform = AddPrecomputedORFNodeIdentifiers(args.D_P)
     else:
         transform = None
-    root_f = f'data/pcqm4m_{args.D_P}_{"lap" if args.use_laplacian else "ort"}'
+    root_f = f'data/pcqm4m_{args.D_P}_{args.node_id_mode}'
     if args.on_disk_dataset:
         print(f"Saving to {root_f}")
         dataset = PCQM4Mv2(root=root_f, split='train',

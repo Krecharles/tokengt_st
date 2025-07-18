@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, global_mean_pool, GATConv, GATv2Conv
-
-from models.token_gt_st_sum import TokenGT
+from torch_geometric.nn import GCNConv, global_mean_pool, GATConv, GATv2Conv, TokenGT
 
 def convert_to_single_emb(x, offset: int = 512):
     # https://github.com/jw9730/tokengt/blob/main/large-scale-regression/tokengt/data/wrapper.py
@@ -22,7 +20,7 @@ class TokenGTGraphRegression(nn.Module):
         num_encoder_layers,
         dim_feedforward,
         include_graph_token,
-        use_laplacian_node_ids,
+        node_id_mode,
         dropout,
         device,
     ):
@@ -35,10 +33,9 @@ class TokenGTGraphRegression(nn.Module):
             num_heads=num_heads,
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
-            use_laplacian_node_ids=use_laplacian_node_ids,
+            node_id_mode=node_id_mode,
             include_graph_token=include_graph_token,
             dropout=dropout,
-            device=device,
         )
         self.lm = nn.Linear(d, 1, device=device)
 
@@ -59,7 +56,7 @@ class TokenGTGraphRegression(nn.Module):
                                       edge_attr,
                                       batch.ptr,
                                       batch.batch,
-                                      batch.node_ids if self._token_gt._use_laplacian_node_ids else None)
+                                      batch.node_ids if hasattr(batch, 'node_ids') else None)
         return self.lm(graph_emb)
 
 class GCNGraphRegression(nn.Module):
