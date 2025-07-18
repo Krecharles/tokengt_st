@@ -7,7 +7,7 @@ from tokengt_experiments.qm9.add_smarts_instances import get_qm9_smarts_patterns
 from tokengt_experiments.qm9.qm9_models import GCNGraphRegression, TokenGTGraphRegression, TokenGTSTSumGraphRegression
 from tokengt_experiments.qm9.qm9_dataset import QM9DataModule
 
-def create_model(config, n_substructures, device):
+def create_model(config, n_substructures):
     """Create model based on architecture configuration."""
     if config["architecture"] == "TokenGT":
         return TokenGTGraphRegression(
@@ -17,9 +17,8 @@ def create_model(config, n_substructures, device):
             num_encoder_layers=config["num_encoder_layers"],
             dim_feedforward=config["dim_feedforward"],
             include_graph_token=config["include_graph_token"],
-            is_laplacian_node_ids=config["use_laplacian"],
+            node_id_mode=config["node_id_mode"],
             dropout=config["dropout"],
-            device=device,
             lr=config["lr"],
             target_idx=config["target_idx"],
             batch_size=config["batch_size"],
@@ -32,9 +31,8 @@ def create_model(config, n_substructures, device):
             num_encoder_layers=config["num_encoder_layers"],
             dim_feedforward=config["dim_feedforward"],
             include_graph_token=config["include_graph_token"],
-            is_laplacian_node_ids=config["use_laplacian"],
+            node_id_mode=config["node_id_mode"],
             dropout=config["dropout"],
-            device=device,
             n_substructures=n_substructures,
             lr=config["lr"],
             target_idx=config["target_idx"],
@@ -46,7 +44,6 @@ def create_model(config, n_substructures, device):
             num_layers=config["num_encoder_layers"],
             dropout=config["dropout"],
             batch_norm=True,
-            device=device,
             lr=config["lr"],
             target_idx=config["target_idx"],
             batch_size=config["batch_size"],
@@ -57,34 +54,35 @@ def create_model(config, n_substructures, device):
 
 def main():
     config = {
-        "architecture": "GCN",
+        "architecture": "TokenGT",
         "dataset": "QM9",
-        "D_P": 32,
+        "target_idx": 2,  # HOMO
+        "D_P": 64,
         "num_heads": 8,
         "d": 64,
         "num_encoder_layers": 4,
         "dim_feedforward": 64,
         "include_graph_token": True,
-        "use_laplacian": False,
-        "dropout": 0.1,
+        "node_id_mode": "orf",
+        "dropout": 0,
         "epochs": 100,
         "lr": 0.001,
-        "batch_size": 32,
-        "target_idx": 2,  # HOMO
-        "num_workers": 4,
+        "batch_size": 1024,
+        "num_workers": 8,
     }
+
+    pl.seed_everything(42, workers=True)
 
     data_module = QM9DataModule(
         batch_size=config["batch_size"],
         num_workers=config["num_workers"],
         d_p=config["D_P"],
-        use_laplacian=config["use_laplacian"],
+        node_id_mode=config["node_id_mode"],
     )
 
     n_substructures = len(get_qm9_smarts_patterns())
     
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = create_model(config, n_substructures, device)
+    model = create_model(config, n_substructures)
 
     wandb.init(mode="disabled")
 
@@ -97,6 +95,7 @@ def main():
             entity="krecharles-university-of-oxford",
             log_model=True,
         ),
+        precision="16-mixed",
     )
 
     trainer.fit(model, data_module)

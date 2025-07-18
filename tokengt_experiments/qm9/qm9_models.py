@@ -16,9 +16,8 @@ class TokenGTGraphRegression(pl.LightningModule):
         num_encoder_layers,
         dim_feedforward,
         include_graph_token,
-        is_laplacian_node_ids,
+        node_id_mode,
         dropout,
-        device,
         lr=0.001,
         target_idx=0,
         batch_size=512,
@@ -34,17 +33,16 @@ class TokenGTGraphRegression(pl.LightningModule):
             num_heads=num_heads,
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
-            is_laplacian_node_ids=is_laplacian_node_ids,
             include_graph_token=include_graph_token,
+            node_id_mode=node_id_mode,
             dropout=dropout,
-            batch_size=batch_size,
-            device=device,
         )
-        self.lm = nn.Linear(d, 1, device=device)
+        self.lm = nn.Linear(d, 1)
 
         # Since most features are binary, no need for embedding.
         self.atom_encoder = nn.Linear(11, d)
         self.edge_encoder = nn.Linear(4, d)
+        self.dist_encoder = nn.Linear(1, d)
         
         self.criterion = nn.L1Loss()
 
@@ -53,19 +51,24 @@ class TokenGTGraphRegression(pl.LightningModule):
         # [...one_hot(type_idx), atomic_number, aromatic, sp, sp2, sp3, num_hs]
         # all binary except atomic_number and num_hs
 
+
         x = self.atom_encoder(batch.x)
         edge_attr = self.edge_encoder(batch.edge_attr)
+
+        pos = batch.pos
+        dist = torch.norm(pos[batch.edge_index[0]] - pos[batch.edge_index[1]], dim=1)
+        dist_emb = self.dist_encoder(dist.unsqueeze(-1))
+        edge_attr = edge_attr + dist_emb
 
         _, graph_emb = self._token_gt(x,
                                       batch.edge_index,
                                       edge_attr,
                                       batch.ptr,
                                       batch.batch,
-                                      batch.node_ids)
+                                      batch.node_ids if "node_ids" in batch else None)
         return self.lm(graph_emb).squeeze()
 
     def _common_step(self, batch):
-        batch = batch.to(self.device)
         out = self(batch)
         target = batch.y[:, self.hparams["target_idx"]]
         loss = self.criterion(out, target)
@@ -73,7 +76,7 @@ class TokenGTGraphRegression(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = self._common_step(batch)
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams["batch_size"])
+        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.hparams["batch_size"])
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -100,9 +103,8 @@ class TokenGTSTSumGraphRegression(pl.LightningModule):
         num_encoder_layers,
         dim_feedforward,
         include_graph_token,
-        is_laplacian_node_ids,
+        use_laplacian_node_ids,
         dropout,
-        device,
         n_substructures,
         lr=0.001,
         target_idx=0,
@@ -119,16 +121,15 @@ class TokenGTSTSumGraphRegression(pl.LightningModule):
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
             dim_edge=d, # because the 1-hot encoding expands the edge features to d
-            is_laplacian_node_ids=is_laplacian_node_ids,
+            use_laplacian_node_ids=use_laplacian_node_ids,
             include_graph_token=include_graph_token,
             dropout=dropout,
-            device=device,
             n_substructures=n_substructures,
         )
         self.atom_encoder = nn.Linear(11, d)
         self.edge_encoder = nn.Linear(4, d)
 
-        self.lm = nn.Linear(d, 1, device=device)
+        self.lm = nn.Linear(d, 1)
         
         self.criterion = nn.L1Loss()
         
@@ -143,13 +144,12 @@ class TokenGTSTSumGraphRegression(pl.LightningModule):
                                       edge_attr,
                                       batch.ptr,
                                       batch.batch,
-                                      batch.node_ids,
+                                      batch.node_ids if self.hparams["use_laplacian_node_ids"] else None,
                                       batch.substructure_instances,
                                       batch.n_substructure_instances)
         return self.lm(graph_emb).squeeze()
 
     def training_step(self, batch, batch_idx):
-        batch = batch.to(self.device)
         out = self(batch)
         target = batch.y[:, self.hparams["target_idx"]]
         loss = self.criterion(out, target)
@@ -158,7 +158,6 @@ class TokenGTSTSumGraphRegression(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        batch = batch.to(self.device)
         out = self(batch)
         target = batch.y[:, self.hparams["target_idx"]]
         loss = self.criterion(out, target)
@@ -167,7 +166,6 @@ class TokenGTSTSumGraphRegression(pl.LightningModule):
         return loss
 
     def test_step(self, batch, batch_idx):
-        batch = batch.to(self.device)
         out = self(batch)
         target = batch.y[:, self.hparams["target_idx"]]
         loss = self.criterion(out, target)
@@ -187,7 +185,6 @@ class GCNGraphRegression(pl.LightningModule):
         num_layers,
         dropout,
         batch_norm,
-        device,
         lr=0.001,
         target_idx=0,
         batch_size=512,
@@ -215,8 +212,6 @@ class GCNGraphRegression(pl.LightningModule):
 
         self.criterion = nn.L1Loss()
 
-        self.to(device)
-        
         print(f"initialized GCN({num_layers} layers, {hidden_channels} hidden, batch_norm={batch_norm})")
 
     def forward(self, batch):
@@ -249,7 +244,6 @@ class GCNGraphRegression(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         # print(f"training_step {batch.shape}")
-        batch = batch.to(self.device)
         out = self(batch)
         target = batch.y[:, self.hparams["target_idx"]]
         loss = self.criterion(out, target)
@@ -258,7 +252,6 @@ class GCNGraphRegression(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        batch = batch.to(self.device)
         out = self(batch)
         target = batch.y[:, self.hparams["target_idx"]]
         loss = self.criterion(out, target)
@@ -267,7 +260,6 @@ class GCNGraphRegression(pl.LightningModule):
         return loss
 
     def test_step(self, batch, batch_idx):
-        batch = batch.to(self.device)
         out = self(batch)
         target = batch.y[:, self.hparams["target_idx"]]
         loss = self.criterion(out, target)
