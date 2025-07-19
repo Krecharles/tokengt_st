@@ -4,9 +4,9 @@ from torch_geometric.datasets import QM9
 from torch_geometric.transforms import Compose
 from torch_geometric.transforms.add_tokengt_node_identifiers import AddLaplacianNodeIdentifiers, AddPrecomputedORFNodeIdentifiers
 from torch_geometric.loader import DataLoader
-from typing import Optional
+from typing import List, Optional
 import torch
-from .add_smarts_instances import get_qm9_smarts_patterns, AddSmartsInstances
+from .add_smarts_instances import AddSubstructureEmbeddings, get_qm9_smarts_patterns, AddSmartsInstances
 
 class QM9DataModule(pl.LightningDataModule):
     def __init__(
@@ -16,6 +16,8 @@ class QM9DataModule(pl.LightningDataModule):
         d_p: int = 32,
         node_id_mode: str = "orf",
         data_dir: str = "data",
+        smarts_patterns: List[List[str]] = [],
+        embed_smarts: bool = False,
     ):
         super().__init__()
         self.batch_size = batch_size
@@ -23,24 +25,28 @@ class QM9DataModule(pl.LightningDataModule):
         self.d_p = d_p
         self.node_id_mode = node_id_mode
         self.data_dir = data_dir
-        self.smarts_patterns = get_qm9_smarts_patterns()
-        self.root_f = f"{self.data_dir}/qm9_{node_id_mode}_{d_p}_{'_'.join(self.smarts_patterns)}"
+        self.smarts_patterns = smarts_patterns
+        self.embed_smarts = embed_smarts
         
+        flatten = lambda lst: [item for sublist in lst for item in sublist]
+        self.root_f = f"{self.data_dir}/qm9_{node_id_mode}_{d_p}_{embed_smarts}_{'_'.join(flatten(self.smarts_patterns))}"
         
+        self.transform = self.get_transforms()
+
+    def get_transforms(self) -> Compose:
+        transforms = []
         if self.node_id_mode == "laplacian":
-            self.transform = Compose([
-                AddLaplacianNodeIdentifiers(d_p),
-                AddSmartsInstances(self.smarts_patterns)
-            ])
-        elif self.node_id_mode == "orf":
-            self.transform = Compose([
-                AddSmartsInstances(self.smarts_patterns)
-            ])
-        else:
-            self.transform = Compose([
-                AddPrecomputedORFNodeIdentifiers(d_p),
-                AddSmartsInstances(self.smarts_patterns)
-            ])
+            transforms.append(AddLaplacianNodeIdentifiers(self.d_p))
+        elif self.node_id_mode == "precomputed":
+            transforms.append(AddPrecomputedORFNodeIdentifiers(self.d_p))
+        
+        transforms.append(AddSmartsInstances(self.smarts_patterns))
+
+        if self.embed_smarts:
+            transforms.append(AddSubstructureEmbeddings(len(self.smarts_patterns)))
+
+        return Compose(transforms)
+
 
     def setup(self, stage: Optional[str] = None):
         dataset = QM9(root=self.root_f, pre_transform=self.transform)
