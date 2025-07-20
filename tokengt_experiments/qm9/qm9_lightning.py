@@ -73,14 +73,14 @@ def create_model(config, n_substructures):
 
 def main():
     config = {
-        "architecture": "MPNN",
+        "architecture": "TokenGTST_Sum",
         "dataset": "QM9",
         "target_idx": 2,  # HOMO
         "D_P": 64,
-        "num_heads": 8,
-        "d": 64,
-        "num_encoder_layers": 4,
-        "dim_feedforward": 64,
+        "num_heads": 16,
+        "d": 128,
+        "num_encoder_layers": 8,
+        "dim_feedforward": 128,
         "include_graph_token": True,
         "node_id_mode": "orf",
         "dropout": 0,
@@ -89,7 +89,7 @@ def main():
         "batch_size": 1024,
         "num_workers": 8,
         "group_smarts": True,
-        "embed_smarts": True, # Whether to add the smarts patterns to the node features (and one-hot encode the group index)
+        "embed_smarts": False, # Whether to add the smarts patterns to the node features (and one-hot encode the group index)
     }
 
     pl.seed_everything(42, workers=True)
@@ -109,19 +109,29 @@ def main():
     
     model = create_model(config, n_substructures)
 
-    wandb.init(mode="disabled")
+    wandb.init(
+        project="QM9",
+        entity="krecharles-university-of-oxford",
+        config=config,
+        # mode="disabled"
+    )
+    wandb_logger = WandbLogger()
+
+
 
     trainer = pl.Trainer(
         max_epochs=config["epochs"],
         accelerator="auto",
         devices="auto",
-        logger=WandbLogger(
-            project="QM9_temp",
-            entity="krecharles-university-of-oxford",
-            log_model=True,
-        ),
+        logger=wandb_logger,
         precision="16-mixed",
+        gradient_clip_val=1.0
     )
+    
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total parameters: {total_params:,}")
+    wandb_logger.experiment.log({"total_parameters": total_params})
+
 
     trainer.fit(model, data_module)
     trainer.test(model, data_module)

@@ -53,7 +53,7 @@ class QM9DataModule(pl.LightningDataModule):
         dataset = dataset.shuffle()
 
         self.train, self.val, self.test = data.random_split(
-            dataset, [0.9, 0.1, 0.0], generator=torch.Generator().manual_seed(42)
+            dataset, [0.8, 0.1, 0.1], generator=torch.Generator().manual_seed(42)
         )
 
     def train_dataloader(self):

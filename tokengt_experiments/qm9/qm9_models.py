@@ -29,8 +29,8 @@ class TokenGTGraphRegression(pl.LightningModule):
         self.save_hyperparameters()
 
         self._token_gt = TokenGT(
-            dim_node=dim_node,
-            dim_edge=dim_edge,
+            dim_node=d,
+            dim_edge=d,
             d_p=d_p,
             d=d,
             num_heads=num_heads,
@@ -119,8 +119,8 @@ class TokenGTSTSumGraphRegression(pl.LightningModule):
         
         self._token_gt = TokenGTST_Sum(
             d_p=d_p,
-            dim_node=dim_node,
-            dim_edge=dim_edge,
+            dim_node=d,
+            dim_edge=d,
             d=d,
             num_heads=num_heads,
             num_encoder_layers=num_encoder_layers,
@@ -297,10 +297,10 @@ class MPNNGraphRegression(pl.LightningModule):
         self.dist_encoder = nn.Linear(1, hidden_channels)
 
         # MPNN layers
-        self.conv1 = MPNNConv(hidden_channels, hidden_channels, edge_dim=64)
+        self.conv1 = MPNNConv(hidden_channels, hidden_channels, edge_dim=hidden_channels)
         self.convs = nn.ModuleList()
         for i in range(num_layers - 1):
-            self.convs.append(MPNNConv(hidden_channels, hidden_channels, edge_dim=64))
+            self.convs.append(MPNNConv(hidden_channels, hidden_channels, edge_dim=hidden_channels))
         
         if batch_norm:
             self.bn1 = nn.BatchNorm1d(hidden_channels)
