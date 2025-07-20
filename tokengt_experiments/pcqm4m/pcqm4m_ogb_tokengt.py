@@ -243,16 +243,17 @@ def run(rank, dataset, args):
     if num_devices > 1:
         model = DistributedDataParallel(model, device_ids=[rank])
 
-    optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=args.weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     scaler = GradScaler() if args.fp16 else None
 
     best_valid_mae = 1000
     # Scheduler: linear warmup to args.lr, then linear decay to 0
-    scheduler1 = lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1, total_iters=args.warmup_epochs*len(train_dataset))
-    scheduler2 = lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=0.0, total_iters=(args.epochs-args.warmup_epochs)*len(train_dataset))
+    scheduler1 = lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1, total_iters=args.warmup_iterations)
+    # so that the learning rate is 1e-9 at the end of the training
+    scheduler2 = lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=1e-9/args.lr, total_iters=args.iterations)
 
-    scheduler = lr_scheduler.SequentialLR(optimizer, schedulers=[scheduler1, scheduler2], milestones=[args.warmup_epochs*len(train_dataset)])
+    scheduler = lr_scheduler.SequentialLR(optimizer, schedulers=[scheduler1, scheduler2], milestones=[args.warmup_iterations])
 
     current_epoch = 1
 
@@ -266,7 +267,9 @@ def run(rank, dataset, args):
         best_valid_mae = checkpoint['best_val_mae']
         print(f"Found checkpoint, resume training at epoch {current_epoch}")
 
-    for epoch in range(current_epoch, args.epochs + 1):
+    n_epochs = (args.warmup_iterations + args.iterations) // len(train_dataset) + 1
+    print(f"Training for {n_epochs} epochs")
+    for epoch in range(current_epoch, n_epochs + 1):
         print(f"learning rate: {optimizer.param_groups[0]['lr']}")
         train_mae = train(model, rank, device, train_loader, optimizer, scheduler, scaler, args.fp16)
 
@@ -337,8 +340,8 @@ if __name__ == "__main__":
                         choices=['gcn', 'gat', 'token_gt'])
     parser.add_argument('--batch_size', type=int, default=256,
                         help='input batch size for training')
-    parser.add_argument('--warmup_epochs', type=int, default=2, help='Number of epochs to warmup the learning rate')
-    parser.add_argument('--epochs', type=int, default=100,
+    parser.add_argument('--warmup_iterations', type=int, default=2, help='Number of epochs to warmup the learning rate')
+    parser.add_argument('--iterations', type=int, default=100000,
                         help='number of epochs to train')
     parser.add_argument('--num_workers', type=int, default=0,
                         help='number of workers')

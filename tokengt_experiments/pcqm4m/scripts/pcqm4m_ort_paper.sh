@@ -4,12 +4,12 @@ python -m tokengt_experiments.pcqm4m.pcqm4m_ogb_tokengt \
     --model token_gt \
     --checkpoint_dir tokengt_experiments/pcqm4m/checkpoints_ort_paper \
     --num_devices 1 \
-    --num_workers 4 \
+    --num_workers 16 \
     --lr 0.0002 \
-    --epochs 300 \
-    --warmup_epochs 16 \
+    --warmup_iterations 12000 \
+    --iterations 200000 \
     --weight_decay 0.1 \
-    --batch_size 900 \
+    --batch_size 512 \
     --D_P 64 \
     --node_id_mode orf \
     --head_dim 24 \
