@@ -22,50 +22,53 @@ class TokenGTGraphRegression(nn.Module):
         num_encoder_layers,
         dim_feedforward,
         include_graph_token,
-        is_laplacian_node_ids,
+        node_id_mode,
         use_one_hot_encoding,
         num_embeddings,
         dim_edge,
         dropout,
-        device,
     ):
         super().__init__()
         self.use_one_hot_encoding = use_one_hot_encoding
 
         self._token_gt = TokenGT(
-            dim_node=dim_node,
-            dim_edge=dim_edge,
+            dim_node=d,
+            dim_edge=d,
             d_p=d_p,
             d=d,
             num_heads=num_heads,
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
-            is_laplacian_node_ids=is_laplacian_node_ids,
+            node_id_mode=node_id_mode,
             include_graph_token=include_graph_token,
             dropout=dropout,
-            device=device,
         )
         if self.use_one_hot_encoding:
             # 1-hot encode
             self.atom_encoder = nn.Embedding(
                 num_embeddings = num_embeddings, # num different atoms in ZINC
-                embedding_dim = num_embeddings
+                embedding_dim = d
             )
-        self.lm = nn.Linear(d, 1, device=device)
-        print(f"initialized TokenGT({dim_node} node features, {dim_edge} edge features, {d} hidden, {num_heads} heads, {num_encoder_layers} layers, {dim_feedforward} feedforward, {include_graph_token} graph token, {is_laplacian_node_ids} laplacian node ids, {use_one_hot_encoding} one hot encoding, {dropout} dropout)")
+            self.edge_encoder = nn.Embedding(
+                num_embeddings = 4,
+                embedding_dim = d
+            )
+        self.lm = nn.Linear(d, 1)
+        print(f"initialized TokenGT({d} hidden, {num_heads} heads, {num_encoder_layers} layers, {dim_feedforward} feedforward, {include_graph_token} graph token, {node_id_mode} node ids, {use_one_hot_encoding} one hot encoding, {dropout} dropout)")
 
     def forward(self, batch):
         if self.use_one_hot_encoding:
             # atom features are the first column of x, other features come later
-            atom_features = torch.squeeze(self.atom_encoder(batch.x[:, 0].long()))
-            batch.x = torch.cat([atom_features, batch.x[:, 1:]], dim=1)
+            atom_features = torch.squeeze(self.atom_encoder(batch.x.long()))
+            # batch.x = torch.cat([atom_features, batch.x[:, 1:]], dim=1)
+            edge_features = self.edge_encoder(batch.edge_attr.long())
 
-        _, graph_emb = self._token_gt(batch.x.float(),
+        _, graph_emb = self._token_gt(atom_features,
                                       batch.edge_index,
-                                      None,
+                                      edge_features,
                                       batch.ptr,
                                       batch.batch,
-                                      batch.node_ids)
+                                      batch.node_ids if hasattr(batch, "node_ids") else None)
         return self.lm(graph_emb)
 
 
@@ -81,11 +84,10 @@ class TokenGTSTSumGraphRegression(nn.Module):
         num_encoder_layers,
         dim_feedforward,
         include_graph_token,
-        is_laplacian_node_ids,
+        node_id_mode,
         use_one_hot_encoding,
         dim_edge,
         dropout,
-        device,
         n_substructures
     ):
         super().__init__()
@@ -97,10 +99,9 @@ class TokenGTSTSumGraphRegression(nn.Module):
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
             dim_edge=dim_edge,
-            is_laplacian_node_ids=is_laplacian_node_ids,
+            node_id_mode=node_id_mode,
             include_graph_token=include_graph_token,
             dropout=dropout,
-            device=device,
             n_substructures=n_substructures
         )
         self.use_one_hot_encoding = use_one_hot_encoding
@@ -112,7 +113,7 @@ class TokenGTSTSumGraphRegression(nn.Module):
                 embedding_dim = 28
             )
 
-        self.lm = nn.Linear(d, 1, device=device)
+        self.lm = nn.Linear(d, 1)
         print(f"initialized TokenGTST_Sum({n_substructures})")
 
     def forward(self, batch):
@@ -127,7 +128,7 @@ class TokenGTSTSumGraphRegression(nn.Module):
                                       None,
                                       batch.ptr,
                                       batch.batch,
-                                      batch.node_ids,
+                                      batch.node_ids if hasattr(batch, "node_ids") else None,
                                       batch.substructure_instances,
                                       batch.n_substructure_instances)
         return self.lm(graph_emb)
@@ -144,11 +145,10 @@ class TokenGTSTHypGraphRegression(nn.Module):
         num_encoder_layers,
         dim_feedforward,
         include_graph_token,
-        is_laplacian_node_ids,
+        node_id_mode,
         use_one_hot_encoding,
         dim_edge,
         dropout,
-        device,
         n_substructures
     ):
         super().__init__()
@@ -160,10 +160,9 @@ class TokenGTSTHypGraphRegression(nn.Module):
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
             dim_edge=dim_edge,
-            is_laplacian_node_ids=is_laplacian_node_ids,
+            node_id_mode=node_id_mode,
             include_graph_token=include_graph_token,
             dropout=dropout,
-            device=device,
             n_substructures=n_substructures
         )
         self.use_one_hot_encoding = use_one_hot_encoding
@@ -175,7 +174,7 @@ class TokenGTSTHypGraphRegression(nn.Module):
                 embedding_dim = 28
             )
 
-        self.lm = nn.Linear(d, 1, device=device)
+        self.lm = nn.Linear(d, 1)
         print(f"initialized TokenGTST_Sum({n_substructures})")
 
     def forward(self, batch):
@@ -190,7 +189,7 @@ class TokenGTSTHypGraphRegression(nn.Module):
                                       None,
                                       batch.ptr,
                                       batch.batch,
-                                      batch.node_ids,
+                                      batch.node_ids if hasattr(batch, "node_ids") else None,
                                       batch.substructure_instances,
                                       batch.n_substructure_instances)
         return self.lm(graph_emb)
@@ -207,7 +206,6 @@ class GCNGraphRegression(nn.Module):
         dropout,
         batch_norm,
         use_one_hot_encoding,
-        device, 
         num_embeddings
     ):
         super().__init__()
@@ -241,8 +239,6 @@ class GCNGraphRegression(nn.Module):
         self.lin1 = nn.Linear(hidden_channels, hidden_channels)
         self.lin2 = nn.Linear(hidden_channels, 1)
 
-        self.to(device)
-        
         print(f"initialized GCN({num_layers} layers, {hidden_channels} hidden, batch_norm={batch_norm})")
 
     def forward(self, batch):

@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from torch_geometric.datasets import ZINC
 from torch_geometric.loader import DataLoader
-from torch_geometric.transforms import AddOrthonormalNodeIdentifiers
+from torch_geometric.transforms import AddLaplacianNodeIdentifiers, AddPrecomputedORFNodeIdentifiers
 from torch_geometric.transforms.compose import Compose
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.data import Data
@@ -101,7 +101,7 @@ def get_loss(model, loader, criterion, device) -> float:
             total_loss += loss
     return total_loss / len(loader.dataset)
 
-def create_model(config, device, dim_node, n_substructures):
+def create_model(config, dim_node, n_substructures):
     if config.architecture == "TokenGT":
         if config.use_one_hot_encoding:
             one_hot_dim = 28 if not config.substructure_vns else 28+n_substructures
@@ -117,11 +117,10 @@ def create_model(config, device, dim_node, n_substructures):
             num_encoder_layers=config.num_encoder_layers,
             dim_feedforward=config.dim_feedforward,
             include_graph_token=config.include_graph_token,
-            is_laplacian_node_ids=config.use_laplacian,
+            node_id_mode=config.node_id_mode,
             use_one_hot_encoding=config.use_one_hot_encoding,
             num_embeddings=one_hot_dim,
             dropout=config.dropout,
-            device=device,
         )
     elif config.architecture == "TokenGT_Sum":
         if config.use_one_hot_encoding:
@@ -137,11 +136,10 @@ def create_model(config, device, dim_node, n_substructures):
             num_encoder_layers=config.num_encoder_layers,
             dim_feedforward=config.dim_feedforward,
             include_graph_token=config.include_graph_token,
-            is_laplacian_node_ids=config.use_laplacian,
+            node_id_mode=config.node_id_mode,
             use_one_hot_encoding=config.use_one_hot_encoding,
             dropout=config.dropout,
             n_substructures=n_substructures,
-            device=device,
         )
     elif config.architecture == "TokenGT_Hyp":
         if config.use_one_hot_encoding:
@@ -157,11 +155,10 @@ def create_model(config, device, dim_node, n_substructures):
             num_encoder_layers=config.num_encoder_layers,
             dim_feedforward=config.dim_feedforward,
             include_graph_token=config.include_graph_token,
-            is_laplacian_node_ids=config.use_laplacian,
+            node_id_mode=config.node_id_mode,
             use_one_hot_encoding=config.use_one_hot_encoding,
             dropout=config.dropout,
             n_substructures=n_substructures,
-            device=device,
         )
     elif config.architecture == "GCN":
         return GCNGraphRegression(
@@ -172,7 +169,6 @@ def create_model(config, device, dim_node, n_substructures):
             batch_norm=config.batch_norm,
             use_one_hot_encoding=config.use_one_hot_encoding,
             num_embeddings=28+n_substructures,
-            device=device,
         )
     elif config.architecture == "GPS":
         return GPS(
@@ -182,7 +178,6 @@ def create_model(config, device, dim_node, n_substructures):
             batch_norm=config.batch_norm,
             use_one_hot_encoding=config.use_one_hot_encoding,
             num_embeddings=28+n_substructures,
-            device=device,
         )
     else:
         raise ValueError(f"Unknown architecture: {config.architecture}")
@@ -215,21 +210,22 @@ def main(config, run):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    transforms = []
+    if config.node_id_mode == "laplacian":
+        transforms.append(AddLaplacianNodeIdentifiers(config.D_P))
+    elif config.node_id_mode == "precomputed_orf":
+        transforms.append(AddPrecomputedORFNodeIdentifiers(config.D_P))
+
+    transforms.append(AddSubstructureInstances(substructures))
     if config.substructure_vns:
-        transform = Compose([
-            AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
-            AddSubstructureInstances(substructures),
-            AddSubstructureMatchesAsVNs(len(substructures)),
-        ])
-    else:
-        transform = Compose([
-            AddOrthonormalNodeIdentifiers(config.D_P, config.use_laplacian),
-            AddSubstructureInstances(substructures),
-            AddSubstructureEmbeddings(len(substructures)),
-        ])
+        transforms.append(AddSubstructureMatchesAsVNs(len(substructures)))
+    if config.substructure_embeddings:
+        transforms.append(AddSubstructureEmbeddings(len(substructures)))
+
+    transform = Compose(transforms)
 
     path = osp.join(osp.realpath(os.getcwd()),
-                    "data", f"ZINC-{config.use_laplacian}-{config.D_P}-{config.substructures_file}-{config.substructure_vns}")
+                    "data", f"ZINC-{config.node_id_mode}-{config.D_P}-{config.substructures_file}-{config.substructure_vns}")
     
     train_dataset = ZINC(path, subset=True, split="train",
                          pre_transform=transform)
@@ -241,7 +237,7 @@ def main(config, run):
     val_loader = DataLoader(val_dataset, batch_size=config.batch_size)
     test_loader = DataLoader(test_dataset, batch_size=config.batch_size)
 
-    model = create_model(config, device, train_dataset.num_node_features, len(substructures))
+    model = create_model(config, train_dataset.num_node_features, len(substructures))
     model.to(device)
 
     num_params = sum(p.numel() for p in model.parameters())
@@ -252,6 +248,16 @@ def main(config, run):
     criterion = nn.L1Loss(reduction="sum")
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     
+    
+    scheduler = ReduceLROnPlateau(
+        optimizer, 
+        mode='min', 
+        factor=config.lr_reduce_factor, 
+        min_lr=config.min_lr, 
+        patience=config.patience,
+    )
+
+
     scheduler = ReduceLROnPlateau(
         optimizer, 
         mode='min', 
@@ -268,16 +274,13 @@ def main(config, run):
     for i in range(2, config.epochs + 2):
         train_loss = train(model, train_loader, criterion, optimizer, device)
         val_loss = get_loss(model, val_loader, criterion, device)
-        
-        scheduler.step(val_loss)
-        current_lr = optimizer.param_groups[0]['lr']
-        
-        print(f"Epoch {i}: train_loss={train_loss:.5f} val_loss={val_loss:.5f} lr={current_lr:.6f}")
+
+        print(f"Epoch {i}: train_loss={train_loss:.5f} val_loss={val_loss:.5f}")
         run.log({
             "train_loss": train_loss, 
             "val_loss": val_loss, 
-            "learning_rate": current_lr
         }, step=i)
+
 
     test_loss = get_loss(model, test_loader, criterion, device)
     print(f"Test loss: {test_loss:.5f}")
@@ -287,28 +290,28 @@ def main(config, run):
 
 
 if __name__ == "__main__":
-    config = {
-        "architecture": "GPS",  # Options: "TokenGT", "GCN", "GPS"
-        "dataset": "ZINC_12K", 
-        # set substructure_file to "" to use no substructures
-        "substructures_file": "cycles_3_8",
-        "substructure_vns": True,
-        "use_one_hot_encoding": True,
-        "num_heads": 8,
-        "d": 32,
-        "num_encoder_layers": 6,
-        "D_P": 32,
-        "use_laplacian": False,
-        "batch_norm": True,
+    # config = {
+    #     "architecture": "GPS",  # Options: "TokenGT", "GCN", "GPS"
+    #     "dataset": "ZINC_12K", 
+    #     # set substructure_file to "" to use no substructures
+    #     "substructures_file": "cycles_3_8",
+    #     "substructure_vns": True,
+    #     "use_one_hot_encoding": True,
+    #     "num_heads": 8,
+    #     "d": 32,
+    #     "num_encoder_layers": 6,
+    #     "D_P": 32,
+    #     "use_laplacian": False,
+    #     "batch_norm": True,
 
-        "epochs": 100,
-        "lr": 0.001,
-        "lr_reduce_factor": 0.5,
-        "min_lr": 0.00001,
-        "patience": 10,
-        "batch_size": 128,
-        "weight_decay": 0.01,
-    }
+    #     "epochs": 100,
+    #     "lr": 0.001,
+    #     "lr_reduce_factor": 0.5,
+    #     "min_lr": 0.00001,
+    #     "patience": 10,
+    #     "batch_size": 128,
+    #     "weight_decay": 0.01,
+    # }
     # config = {
     #     "architecture": "GCN",  # Options: "TokenGT", "GCN", "GPS"
     #     "dataset": "ZINC_12K", 
@@ -333,34 +336,32 @@ if __name__ == "__main__":
     #     "batch_size": 128,
     #     "weight_decay": 0.01,
     # }
-    # config = {
-    #     "architecture": "TokenGT",  # Options: "TokenGT", "TokenGT_Sum", "TokenGT_Hyp", "GCN"
-    #     "dataset": "ZINC_12K", 
-    #     # set substructure_file to "" to use no substructures
-    #     "substructures_file": "",
-    #     "substructure_vns": False,
-    #     "D_P": 32,
-    #     "num_heads": 8,
-    #     "d": 64,
-    #     "num_encoder_layers": 4,
-    #     "dim_feedforward": 64,
-    #     "include_graph_token": True,
-    #     "use_laplacian": True,
-    #     "use_one_hot_encoding": True,
-    #     "batch_norm": True,
-    #     "dropout": 0.1,
-    #     "epochs": 100,
-    #     "lr": 0.001,
-    #     "lr_reduce_factor": 0.5,
-    #     "min_lr": 0.00001,
-    #     "patience": 10,
-    #     "batch_size": 8,
-    #     "weight_decay": 0.01,
-    # }
+    config = {
+        "architecture": "TokenGT",  # Options: "TokenGT", "TokenGT_Sum", "TokenGT_Hyp", "GCN"
+        "dataset": "ZINC_12K", 
+        # set substructure_file to "" to use no substructures
+        "substructures_file": "",
+        "substructure_vns": False,
+        "substructure_embeddings": False,
+        "D_P": 64,
+        "num_heads": 16,
+        "d": 64,
+        "num_encoder_layers": 4,
+        "dim_feedforward": 64,
+        "include_graph_token": True,
+        "node_id_mode": "precomputed_orf",
+        "use_one_hot_encoding": True,
+        "batch_norm": True,
+        "dropout": 0.1,
+        "epochs": 100,
+        "lr": 1e-3,
+        "batch_size": 1024,
+        "weight_decay": 0.01,
+    }
     run = wandb.init(
         entity="krecharles-university-of-oxford",
         project="substructure_embeddings",
         config=config,
-        mode="disabled"
+        # mode="disabled"
     )
     main(config, run)
