@@ -104,6 +104,7 @@ class GraphFeatureTokenizer(nn.Module):
             torch.less(token_pos, node_num + edge_num)
         )
 
+        # padded index is a mapping of tokens to (u, u) or (u, v)
         padded_index = torch.zeros(b, max_len, 2, device=device, dtype=torch.long)  # [B, T, 2]
         padded_index[padded_node_mask, :] = node_index.t()
         padded_index[padded_edge_mask, :] = edge_index.t()
@@ -210,25 +211,29 @@ class GraphFeatureTokenizer(nn.Module):
     def forward(self, batched_data, perturb=None):
         (
             node_data,
-            in_degree,
-            out_degree,
-            node_num,
-            lap_eigvec,
-            lap_eigval,
+            batch,
+            ptr,
+            eigvec,
             edge_index,
             edge_data,
-            edge_num
         ) = (
             batched_data["node_data"],
-            batched_data["in_degree"],
-            batched_data["out_degree"],
-            batched_data["node_num"],
+            batched_data["batch"],
+            batched_data["ptr"],
             batched_data["lap_eigvec"],
-            batched_data["lap_eigval"],
             batched_data["edge_index"],
             batched_data["edge_data"],
-            batched_data["edge_num"]
         )
+
+        # reset edge_index offset
+
+
+        node_num = ptr[1:] - ptr[:-1]
+        edge_num = torch.bincount(batch[edge_index[0]], minlength=int(batch.max()) + 1)
+
+        # remove batchting offsets from edge_index
+        edge_index = edge_index - torch.repeat_interleave(ptr[:-1], edge_num).unsqueeze(0)
+
 
         node_feature = self.atom_encoder(node_data).sum(-2)  # [sum(n_node), D]
         edge_feature = self.edge_encoder(edge_data).sum(-2)  # [sum(n_edge), D]
@@ -261,11 +266,11 @@ class GraphFeatureTokenizer(nn.Module):
             padded_feature = padded_feature + self.orf_encoder(orf_index_embed)
 
         if self.lap_node_id:
-            lap_dim = lap_eigvec.size(-1)
-            if self.lap_node_id_k > lap_dim:
-                eigvec = F.pad(lap_eigvec, (0, self.lap_node_id_k - lap_dim), value=float('0'))  # [sum(n_node), Dl]
-            else:
-                eigvec = lap_eigvec[:, :self.lap_node_id_k]  # [sum(n_node), Dl]
+            # lap_dim = lap_eigvec.size(-1)
+            # if self.lap_node_id_k > lap_dim:
+            #     eigvec = F.pad(lap_eigvec, (0, self.lap_node_id_k - lap_dim), value=float('0'))  # [sum(n_node), Dl]
+            # else:
+            #     eigvec = lap_eigvec[:, :self.lap_node_id_k]  # [sum(n_node), Dl]
             if self.lap_eig_dropout is not None:
                 eigvec = self.lap_eig_dropout(eigvec[..., None, None]).view(eigvec.size())
             lap_node_id = self.handle_eigvec(eigvec, node_mask, self.lap_node_id_sign_flip)

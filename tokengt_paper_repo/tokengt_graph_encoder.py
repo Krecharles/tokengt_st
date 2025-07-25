@@ -6,8 +6,6 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from fairseq.modules import FairseqDropout, LayerDropModuleList, LayerNorm
-from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 
 from .performer_pytorch import ProjectionUpdater
 from .multihead_attention import MultiheadAttention
@@ -43,13 +41,7 @@ class TokenGTGraphEncoder(nn.Module):
     def __init__(
             self,
             num_atoms: int,
-            num_in_degree: int,
-            num_out_degree: int,
             num_edges: int,
-            num_spatial: int,
-            num_edge_dis: int,
-            edge_type: str,
-            multi_hop_max_dist: int,
 
             rand_node_id: bool = False,
             rand_node_id_dim: int = 64,
@@ -59,7 +51,7 @@ class TokenGTGraphEncoder(nn.Module):
             lap_node_id_k: int = 8,
             lap_node_id_sign_flip: bool = False,
             lap_node_id_eig_dropout: float = 0.0,
-            type_id: bool = False,
+            type_id: bool = True,
 
             stochastic_depth: bool = False,
 
@@ -95,9 +87,7 @@ class TokenGTGraphEncoder(nn.Module):
     ) -> None:
 
         super().__init__()
-        self.dropout_module = FairseqDropout(
-            dropout, module_name=self.__class__.__name__
-        )
+        self.dropout_module = nn.Dropout(dropout)
         self.layerdrop = layerdrop
         self.embedding_dim = embedding_dim
         self.apply_graphormer_init = apply_graphormer_init
@@ -123,25 +113,19 @@ class TokenGTGraphEncoder(nn.Module):
         self.performer_finetune = performer_finetune
         self.embed_scale = embed_scale
 
-        if q_noise > 0:
-            self.quant_noise = apply_quant_noise_(
-                nn.Linear(self.embedding_dim, self.embedding_dim, bias=False),
-                q_noise,
-                qn_block_size,
-            )
-        else:
-            self.quant_noise = None
+        assert q_noise == 0, "Quantization noise is not implemented yet."
+        self.quant_noise = None
 
         if encoder_normalize_before:
-            self.emb_layer_norm = LayerNorm(self.embedding_dim, export=export)
+            self.emb_layer_norm = nn.LayerNorm(self.embedding_dim)
         else:
             self.emb_layer_norm = None
 
         if layernorm_style == "prenorm":
-            self.final_layer_norm = LayerNorm(self.embedding_dim, export=export)
+            self.final_layer_norm = nn.LayerNorm(self.embedding_dim)
 
         if self.layerdrop > 0.0:
-            self.layers = LayerDropModuleList(p=self.layerdrop)
+            self.layers = nn.ModuleList([])
         else:
             self.layers = nn.ModuleList([])
 

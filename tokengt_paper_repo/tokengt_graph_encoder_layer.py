@@ -6,8 +6,6 @@ from typing import Callable, Optional
 
 import torch
 import torch.nn as nn
-from fairseq.modules import LayerNorm
-from fairseq.modules.fairseq_dropout import FairseqDropout
 
 from .multihead_attention import MultiheadAttention
 from .multihead_performer_attention import MultiheadPerformerAttention
@@ -53,9 +51,7 @@ class TokenGTGraphEncoderLayer(nn.Module):
         self.layernorm_style = layernorm_style
         self.return_attention = return_attention
 
-        self.dropout_module = FairseqDropout(
-            dropout, module_name=self.__class__.__name__
-        )
+        self.dropout_module = nn.Dropout(dropout)
 
         # Initialize blocks
         self.self_attn = self.build_self_attention(
@@ -72,7 +68,7 @@ class TokenGTGraphEncoderLayer(nn.Module):
         )
 
         # layer norm associated with the self attention layer
-        self.self_attn_layer_norm = LayerNorm(self.embedding_dim, export=export)
+        self.self_attn_layer_norm = nn.LayerNorm(self.embedding_dim)
 
         # drop path for stochastic depth
         self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
@@ -89,7 +85,7 @@ class TokenGTGraphEncoderLayer(nn.Module):
         )
 
         # layer norm associated with the position wise feed-forward NN
-        self.final_layer_norm = LayerNorm(self.embedding_dim, export=export)
+        self.final_layer_norm = nn.LayerNorm(self.embedding_dim)
 
         # drop path for stochastic depth
         self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
