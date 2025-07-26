@@ -5,9 +5,12 @@ For setup, clone the [PyG TokenGT PR](https://github.com/michailmelonas/pytorch_
 commands to setup the pyg fork:
 
 ```
+git clone https://github.com/Krecharles/tokengt_st
 git clone https://github.com/krecharles/pytorch_geometric.git
 cd pytorch_geometric/
 git checkout add-token-gt
 cd ..
 pip install -e pytorch_geometric
+cd tokengt_st
+pip install -r requirements.txt
 ```
