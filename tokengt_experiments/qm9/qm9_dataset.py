@@ -6,9 +6,9 @@ from torch_geometric.transforms.add_tokengt_node_identifiers import AddLaplacian
 from torch_geometric.loader import DataLoader
 from typing import List, Optional
 import torch
-from .add_smarts_instances import AddSubstructureEmbeddings, get_qm9_smarts_patterns, AddSmartsInstances
+from models.add_smarts_instances import AddSubstructureEmbeddings, get_qm9_smarts_patterns, AddSmartsInstances
 
-class QM9DataModule(pl.LightningDataModule):
+class QM9Dataset(pl.LightningDataModule):
     def __init__(
         self,
         batch_size: int = 512,

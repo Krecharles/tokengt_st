@@ -35,7 +35,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             rand_node_id_dim=d_p,
             orf_node_id=node_id_mode == "orf",
             orf_node_id_dim=d_p,
-            lap_node_id=node_id_mode == "lap",
+            lap_node_id=node_id_mode == "laplacian",
             lap_node_id_k=d_p,
             type_id=True,
             # >

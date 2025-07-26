@@ -2,7 +2,7 @@ import torch
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 import wandb
-
+import os
 from models.add_smarts_instances import get_qm9_smarts_patterns
 from tokengt_experiments.qm9.qm9_dataset import QM9Dataset
 from tokengt_paper_experiments.zinc_dataset import ZincDataset
@@ -85,7 +85,7 @@ def main():
     model = create_model(config, dim_node, dim_edge, n_substructures)
 
     wandb.init(
-        project="QM9",
+        project="tgtp_zinc",
         entity="krecharles-university-of-oxford",
         config=config,
         mode="disabled"
@@ -110,6 +110,7 @@ def main():
     trainer.test(model, data_module)
 
     # Save trained model
+    os.makedirs("trained_models", exist_ok=True)
     save_path = f"trained_models/{config['architecture']}_{config['dataset']}_target{config['target_idx']}.pt"
     torch.save(model, save_path)
 
