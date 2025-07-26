@@ -12,7 +12,7 @@ from . import algos
 @torch.jit.script
 def convert_to_single_emb(x, offset: int = 512):
     feature_num = x.size(1) if len(x.size()) > 1 else 1
-    feature_offset = 1 + torch.arange(0, feature_num * offset, offset, dtype=torch.long)
+    feature_offset = torch.arange(0, feature_num * offset, offset, dtype=torch.long)
     x = x + feature_offset
     return x
 

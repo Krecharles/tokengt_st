@@ -10,17 +10,14 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         num_atoms,
         num_edges,
         d_p,
-        dim_node,
-        dim_edge,
         d,
         num_heads,
         num_encoder_layers,
-        dim_feedforward,
-        include_graph_token,
         node_id_mode,
         dropout,
         lr=0.001,
         batch_size=512,
+        weight_decay=0.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -75,7 +72,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = self._common_step(batch)
-        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.hparams["batch_size"])
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams["batch_size"])
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -89,5 +86,5 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams["lr"])
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams["lr"], weight_decay=self.hparams["weight_decay"])
         return optimizer
