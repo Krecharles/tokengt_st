@@ -18,37 +18,34 @@ def convert_to_single_emb(x, offset: int = 512):
 
 
 class AddTokenGTPaperNodeIdentifiers:
-    def __init__(self, d_p):
+    def __init__(self, d_p, convert_to_single_emb_offset: int = 512):
         self.d_p = d_p
+        self.convert_to_single_emb_offset = convert_to_single_emb_offset
 
     def __call__(self, item):
-        return preprocess_item(item, self.d_p)
+        edge_int_feature, edge_index, node_int_feature = item.edge_attr, item.edge_index, item.x
+        node_data = convert_to_single_emb(node_int_feature, self.convert_to_single_emb_offset)
+        if len(edge_int_feature.size()) == 1:
+            edge_int_feature = edge_int_feature[:, None]
+        edge_data = convert_to_single_emb(edge_int_feature, self.convert_to_single_emb_offset)
 
-def preprocess_item(item, d_p):
+        N = node_int_feature.size(0)
+        dense_adj = torch.zeros([N, N], dtype=torch.bool)
+        dense_adj[edge_index[0, :], edge_index[1, :]] = True
+        in_degree = dense_adj.long().sum(dim=1).view(-1)
+        lap_eigvec, lap_eigval = algos.lap_eig(dense_adj, N, in_degree)  # [N, N], [N,]
+        lap_eigval = lap_eigval[None, :].expand_as(lap_eigvec)
 
-    edge_int_feature, edge_index, node_int_feature = item.edge_attr, item.edge_index, item.x
-    node_data = convert_to_single_emb(node_int_feature)
-    if len(edge_int_feature.size()) == 1:
-        edge_int_feature = edge_int_feature[:, None]
-    edge_data = convert_to_single_emb(edge_int_feature)
+        lap_dim = lap_eigvec.size(-1)
+        if self.d_p > lap_dim:
+            lap_eigvec = F.pad(lap_eigvec, (0, self.d_p - lap_dim), value=float('0'))  # [sum(n_node), Dl]
+        else:
+            lap_eigvec = lap_eigvec[:, :self.d_p]  # [sum(n_node), Dl]
 
-    N = node_int_feature.size(0)
-    dense_adj = torch.zeros([N, N], dtype=torch.bool)
-    dense_adj[edge_index[0, :], edge_index[1, :]] = True
-    in_degree = dense_adj.long().sum(dim=1).view(-1)
-    lap_eigvec, lap_eigval = algos.lap_eig(dense_adj, N, in_degree)  # [N, N], [N,]
-    lap_eigval = lap_eigval[None, :].expand_as(lap_eigvec)
-
-    lap_dim = lap_eigvec.size(-1)
-    if d_p > lap_dim:
-        lap_eigvec = F.pad(lap_eigvec, (0, d_p - lap_dim), value=float('0'))  # [sum(n_node), Dl]
-    else:
-        lap_eigvec = lap_eigvec[:, :d_p]  # [sum(n_node), Dl]
-
-    item.node_data = node_data
-    item.edge_data = edge_data
-    item.edge_index = edge_index
-    item.in_degree = in_degree
-    item.out_degree = in_degree  # for undirected graph
-    item.lap_eigvec = lap_eigvec
-    return item
+        item.node_data = node_data
+        item.edge_data = edge_data
+        item.edge_index = edge_index
+        item.in_degree = in_degree
+        item.out_degree = in_degree  # for undirected graph
+        item.lap_eigvec = lap_eigvec
+        return item

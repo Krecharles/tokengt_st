@@ -18,6 +18,8 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         lr=0.001,
         batch_size=512,
         weight_decay=0.0,
+        substructure_mode=None,
+        n_substructures=0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -56,6 +58,8 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             apply_graphormer_init=True,
             activation_fn="gelu",
             return_attention=False,
+            substructure_mode=substructure_mode,
+            n_substructures=n_substructures,
             # >
         )
         self.lm = nn.Linear(d, 1)

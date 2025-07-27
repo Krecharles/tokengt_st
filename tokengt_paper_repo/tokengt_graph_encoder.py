@@ -7,6 +7,8 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 
+from tokengt_paper_repo.tokenizer_sum import GraphFeatureTokenizerSum
+
 from .performer_pytorch import ProjectionUpdater
 from .multihead_attention import MultiheadAttention
 from .tokenizer import GraphFeatureTokenizer
@@ -82,7 +84,10 @@ class TokenGTGraphEncoder(nn.Module):
             q_noise: float = 0.0,
             qn_block_size: int = 8,
 
-            return_attention: bool = False
+            return_attention: bool = False,
+
+            substructure_mode: str = None, #"sum" or None
+            n_substructures: int = 0,
 
     ) -> None:
 
@@ -95,22 +100,43 @@ class TokenGTGraphEncoder(nn.Module):
         self.performer = performer
         self.performer_finetune = performer_finetune
 
-        self.graph_feature = GraphFeatureTokenizer(
-            num_atoms=num_atoms,
-            num_edges=num_edges,
-            rand_node_id=rand_node_id,
-            rand_node_id_dim=rand_node_id_dim,
-            orf_node_id=orf_node_id,
-            orf_node_id_dim=orf_node_id_dim,
-            lap_node_id=lap_node_id,
-            lap_node_id_k=lap_node_id_k,
-            lap_node_id_sign_flip=lap_node_id_sign_flip,
-            lap_node_id_eig_dropout=lap_node_id_eig_dropout,
-            type_id=type_id,
-            hidden_dim=embedding_dim,
-            n_layers=num_encoder_layers
-        )
-        self.performer_finetune = performer_finetune
+        if substructure_mode == None:
+            self.graph_feature = GraphFeatureTokenizer(
+                num_atoms=num_atoms,
+                num_edges=num_edges,
+                rand_node_id=rand_node_id,
+                rand_node_id_dim=rand_node_id_dim,
+                orf_node_id=orf_node_id,
+                orf_node_id_dim=orf_node_id_dim,
+                lap_node_id=lap_node_id,
+                lap_node_id_k=lap_node_id_k,
+                lap_node_id_sign_flip=lap_node_id_sign_flip,
+                lap_node_id_eig_dropout=lap_node_id_eig_dropout,
+                type_id=type_id,
+                hidden_dim=embedding_dim,
+                n_layers=num_encoder_layers
+            )
+        elif substructure_mode == "sum":
+            self.graph_feature = GraphFeatureTokenizerSum(
+                num_atoms=num_atoms,
+                num_edges=num_edges,
+                rand_node_id=rand_node_id,
+                rand_node_id_dim=rand_node_id_dim,
+                orf_node_id=orf_node_id,
+                orf_node_id_dim=orf_node_id_dim,
+                lap_node_id=lap_node_id,
+                lap_node_id_k=lap_node_id_k,
+                lap_node_id_sign_flip=lap_node_id_sign_flip,
+                lap_node_id_eig_dropout=lap_node_id_eig_dropout,
+                type_id=type_id,
+                hidden_dim=embedding_dim,
+                n_layers=num_encoder_layers,
+                n_substructures=n_substructures
+            )
+        else:
+            raise ValueError(f"Invalid substructure mode: {substructure_mode}")
+
+        self.performer_finetune = performer_finetune    
         self.embed_scale = embed_scale
 
         assert q_noise == 0, "Quantization noise is not implemented yet."

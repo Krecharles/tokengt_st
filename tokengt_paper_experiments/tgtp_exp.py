@@ -27,6 +27,22 @@ def create_model(config, num_atoms, num_edges, n_substructures):
             batch_size=config["batch_size"],
             weight_decay=config["weight_decay"],
         )
+    elif config["architecture"] == "TokenGT_Paper_Sum":
+        return TokenGTPaperGraphRegression(
+            num_atoms=num_atoms,
+            num_edges=num_edges,
+            d_p=config["D_P"],
+            d=config["d"],
+            num_heads=config["num_heads"],
+            num_encoder_layers=config["num_encoder_layers"],
+            node_id_mode=config["node_id_mode"],
+            dropout=config["dropout"],
+            lr=config["lr"],
+            batch_size=config["batch_size"],
+            weight_decay=config["weight_decay"],
+            substructure_mode="sum",
+            n_substructures=n_substructures
+        )
     else:
         raise ValueError(f"Unknown architecture: {config['architecture']}")
 
@@ -44,22 +60,22 @@ def load_checkpoint_path(model_name):
 
 def main():
     config = {
-        "architecture": ["TokenGT_Paper"][0],
-        "dataset": ["ZINC", "QM9", "PCQM4M"][2],
+        "architecture": ["TokenGT_Paper", "TokenGT_Paper_Sum"][1],
+        "dataset": ["ZINC", "QM9", "PCQM4M"][1],
         "target_idx": 2,  # HOMO
         "group_smarts": True,
         "embed_smarts": False, # Whether to add the smarts patterns to the node features (and one-hot encode the group index)
         
         "node_id_mode": ["orf", "laplacian"][1],
         "D_P": 64,
-        "num_heads": 32,
-        "d": 768,
-        "num_encoder_layers": 12,
+        "num_heads": 8,
+        "d": 64,
+        "num_encoder_layers": 3,
 
         "epochs": 50,
-        "batch_size": 128,
+        "batch_size": 8,
         "lr": 0.0002,
-        "num_workers": 16,
+        "num_workers": 4,
         "weight_decay": 0.1,
         "dropout": 0.1,
     }
@@ -69,7 +85,7 @@ def main():
     pl.seed_everything(42, workers=True)
 
     smarts_patterns = get_qm9_smarts_patterns(grouped=config["group_smarts"])
-    smarts_patterns = []
+    # smarts_patterns = []
     n_substructures = len(smarts_patterns)
 
     if config["dataset"] == "QM9":
@@ -82,8 +98,8 @@ def main():
             embed_smarts=config["embed_smarts"],
             target_idx=config["target_idx"],
         )
-        num_atoms = 11 + n_substructures if config["embed_smarts"] else 11
-        num_edges = 4
+        num_atoms = 10 * 2
+        num_edges = 10 * 4
     elif config["dataset"] == "ZINC":
         data_module = ZincDataset(
             batch_size=config["batch_size"],
@@ -110,7 +126,7 @@ def main():
         project=f"tgtp_{config['dataset']}",
         entity="krecharles-university-of-oxford",
         config=config,
-        # mode="disabled"
+        mode="disabled"
     )
     wandb_logger = WandbLogger()
 
@@ -137,11 +153,6 @@ def main():
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {total_params:,}")
     wandb_logger.experiment.log({"total_parameters": total_params})
-
-    print(f"Checkpoint directory: {trainer.default_root_dir}")
-    print(f"Model checkpoint callback: {checkpoint_callback}")
-
-    # Load checkpoint if it exists, (filename unknown, so just load unique item in folder)
 
     checkpoint_path = load_checkpoint_path(model_name)
 
