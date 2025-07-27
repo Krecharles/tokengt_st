@@ -10,7 +10,6 @@ class AddSmartsInstances(BaseTransform):
         self._smarts_patterns = smarts_patterns
         self._grouped = grouped
         
-        # Calculate max atoms across all patterns
         max_atoms = 0
         for group in smarts_patterns:
             for s in group:
@@ -36,35 +35,44 @@ class AddSmartsInstances(BaseTransform):
         data["n_substructure_instances"] = torch.tensor(len(substructure_instances), dtype=torch.long)
         return data
 
-def get_qm9_smarts_patterns(grouped: bool = False):
-    hydrocarbons = [
-        "[C]=[C]",           # Alkene
-        "c1ccccc1",          # Aromatic ring (benzene)
-        "[C]#[C]"            # Alkyne
-    ]
+def get_qm9_smarts_patterns():
+    fragments = [
+        # 1. Oxygen-containing carbonyls
+        [
+            "*-C(=O)-[C;D1]",       # terminal aldehyde -0.02 (#3)
+            "*-C(=O)-[N;D1]",       # amide -0.02 (#4)
+            "*-C(=O)-[C;D1;H3]",    # carbonyl methyl -0.02 (#5)
+            "*=[O;D1]"              # side-chain aldehydes or ketones -0.42 (#35)
+        ],
 
-    haloalkanes = [
-        # "[CX4][F]",          # Fluoroalkane
-        # "[CX4][Cl]",         # Chloroalkane
-        # "[CX4][I]"           # Iodoalkane
-    ]
+        # 2. Nitrogen-based groups
+        [
+            "*-[C;D2]#[N;D1]",      # cyano -0.13 (#16)
+            "*-[N;D1]",             # primary amines -0.15 (#36)
+            "*#[N;D1]"              # nitriles -0.13 (#38)
+        ],
 
-    oxygen_containing = [
-        # "[CX3](=O)[OX2H1]",  # Carboxylic acid
-        "[CX3](=O)[#6]",     # Ketone (carbonyl next to carbon)
-        "[OD2]([#6])[#6]"    # Ether
-    ]
+        # 3. Unsaturated hydrocarbons
+        [
+            "[C]=[C]",              # alkene -0.14 (#39)
+            "[C]#[C]",              # alkyne -0.15 (#41)
+            "*-[C;D2]#[C;D1;H]"     # acetylenes -0.11 (#30)
+        ],
 
-    nitrogen_containing = [
-        "[NX3][CX3](=O)[#6]",  # Amide
-        "[CX3]=[NX2]",         # Imine
-        "[NX3;H2][#6]"         # Primary amine
-    ]
+        # 4. Alkoxy and hydroxyl groups
+        [
+            "*-[O;D2]-[C;D2]-[C;D1;H3]",  # ethoxy -0.01 (#32)
+            "*-[O;D2]-[C;D1;H3]",         # methoxy -0.07 (#33)
+            "*-[O;D1]"                    # side-chain hydroxyls -0.39 (#34)
+        ],
 
-    if grouped:
-        return [hydrocarbons, haloalkanes, oxygen_containing, nitrogen_containing]
-    else:
-        return [[x] for x in hydrocarbons + haloalkanes + oxygen_containing + nitrogen_containing]
+        # 5. Miscellaneous groups
+        [
+            "*-[#9,#17,#35,#53]",         # halogens -0.02 (#27)
+        ],
+    ]
+    return fragments
+
 
 class AddSubstructureEmbeddings(BaseTransform):
     """

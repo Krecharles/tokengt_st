@@ -63,7 +63,6 @@ def main():
         "architecture": ["TokenGT_Paper", "TokenGT_Paper_Sum"][1],
         "dataset": ["ZINC", "QM9", "PCQM4M"][1],
         "target_idx": 2,  # HOMO
-        "group_smarts": True,
         "embed_smarts": False, # Whether to add the smarts patterns to the node features (and one-hot encode the group index)
         
         "node_id_mode": ["orf", "laplacian"][1],
@@ -84,7 +83,7 @@ def main():
 
     pl.seed_everything(42, workers=True)
 
-    smarts_patterns = get_qm9_smarts_patterns(grouped=config["group_smarts"])
+    smarts_patterns = get_qm9_smarts_patterns()
     # smarts_patterns = []
     n_substructures = len(smarts_patterns)
 
