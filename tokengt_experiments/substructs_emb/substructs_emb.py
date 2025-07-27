@@ -247,29 +247,11 @@ def main(config, run):
 
     criterion = nn.L1Loss(reduction="sum")
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-    
-    
-    scheduler = ReduceLROnPlateau(
-        optimizer, 
-        mode='min', 
-        factor=config.lr_reduce_factor, 
-        min_lr=config.min_lr, 
-        patience=config.patience,
-    )
 
-
-    scheduler = ReduceLROnPlateau(
-        optimizer, 
-        mode='min', 
-        factor=config.lr_reduce_factor, 
-        min_lr=config.min_lr, 
-        patience=config.patience,
-    )
-
-    train_loss = get_loss(model, train_loader, criterion, device)
-    val_loss = get_loss(model, val_loader, criterion, device)
-    print(f"Epoch 0: train_loss={train_loss:.5f} val_loss={val_loss:.5f}")
-    run.log({"train_loss": train_loss, "val_loss": val_loss}, step=1)
+    # train_loss = get_loss(model, train_loader, criterion, device)
+    # val_loss = get_loss(model, val_loader, criterion, device)
+    # print(f"Epoch 0: train_loss={train_loss:.5f} val_loss={val_loss:.5f}")
+    # run.log({"train_loss": train_loss, "val_loss": val_loss}, step=1)
 
     for i in range(2, config.epochs + 2):
         train_loss = train(model, train_loader, criterion, optimizer, device)
@@ -343,13 +325,13 @@ if __name__ == "__main__":
         "substructures_file": "",
         "substructure_vns": False,
         "substructure_embeddings": False,
-        "D_P": 64,
+        "D_P": 16,
         "num_heads": 16,
         "d": 64,
         "num_encoder_layers": 4,
         "dim_feedforward": 64,
         "include_graph_token": True,
-        "node_id_mode": "precomputed_orf",
+        "node_id_mode": "laplacian",
         "use_one_hot_encoding": True,
         "batch_norm": True,
         "dropout": 0.1,
@@ -362,6 +344,6 @@ if __name__ == "__main__":
         entity="krecharles-university-of-oxford",
         project="substructure_embeddings",
         config=config,
-        # mode="disabled"
+        mode="disabled"
     )
     main(config, run)

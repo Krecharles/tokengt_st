@@ -132,7 +132,7 @@ class GraphFeatureTokenizerSum(GraphFeatureTokenizer):
         mask = vertices != -1
         vertices[~mask] = 0
 
-        batch_ids = torch.arange(b).repeat_interleave(n_substructures_instances).unsqueeze(1)
+        batch_ids = torch.arange(b, device=node_id.device).repeat_interleave(n_substructures_instances).unsqueeze(1)
         substr_node_id = padded_node_id[batch_ids, vertices] # [num_substrucs, num_vertices, D]
         substr_node_id = substr_node_id * mask.unsqueeze(-1)
         substr_index_sum = substr_node_id.sum(1) # [num_substrucs, D]
