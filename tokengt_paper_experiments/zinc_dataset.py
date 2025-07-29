@@ -1,12 +1,12 @@
 import pytorch_lightning as pl
 from torch.utils import data
-from torch_geometric.datasets import ZINC
 from torch_geometric.transforms import Compose
 from torch_geometric.loader import DataLoader
 from typing import List, Optional
 
 from tokengt_paper_repo.wrapper import AddTokenGTPaperNodeIdentifiers
 from models.add_smarts_instances import AddSubstructureEmbeddings, AddSmartsInstances
+from tokengt_experiments.zinc.zinc_smiles_dataset import ZincSmilesDataset
 
 class ZincDataset(pl.LightningDataModule):
     def __init__(
@@ -44,9 +44,9 @@ class ZincDataset(pl.LightningDataModule):
 
 
     def setup(self, stage: Optional[str] = None):
-        self.train = ZINC(root=self.root_f, subset=True, pre_transform=self.transform, split="train")
-        self.val = ZINC(root=self.root_f, subset=True, pre_transform=self.transform, split="val")
-        self.test = ZINC(root=self.root_f, subset=True, pre_transform=self.transform, split="test")
+        self.train = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="train")
+        self.val = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="val")
+        self.test = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="test")
 
     def train_dataloader(self):
         return DataLoader(
