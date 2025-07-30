@@ -1,6 +1,10 @@
+from rdkit import Chem
+from rdkit.Chem import Draw
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
+import wandb
+import matplotlib.pyplot as plt
 
 from tokengt_paper_repo import TokenGTGraphEncoder
 
@@ -20,6 +24,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         weight_decay=0.0,
         substructure_mode=None,
         n_substructures=0,
+        return_attention=False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -57,25 +62,67 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             layernorm_style="postnorm",
             apply_graphormer_init=True,
             activation_fn="gelu",
-            return_attention=False,
             substructure_mode=substructure_mode,
             n_substructures=n_substructures,
+            return_attention=return_attention,
             # >
         )
         self.lm = nn.Linear(d, 1)
         self.criterion = nn.L1Loss()
 
     def forward(self, batch):
-        _, graph_emb, _ = self._token_gt(batch)
-        return self.lm(graph_emb).squeeze()
+        _, graph_emb, attn_dict = self._token_gt(batch)
+        return self.lm(graph_emb).squeeze(), attn_dict
 
-    def _common_step(self, batch):
-        out = self(batch)
+    def _common_step(self, batch, log_attention=False):
+        out, attn_dict = self(batch)
         loss = self.criterion(out, batch.y)
+        if log_attention and self.hparams["return_attention"]:
+            self.log_sample(attn_dict, batch, batch.y, out)
         return loss
 
+    def log_sample(self, attn_dict, batch, y_true, y_pred):
+        # logs the first graph in the batch with attention maps in every layer and head
+        cols = ["smiles", "mol", "y_true", "y_pred", "n_atoms", "n_edges", "n_substructure_instances", "node_features", "edge_features", "substructure_instances"]
+        for layer in range(len(attn_dict["maps"])):
+            for head in range(len(attn_dict["maps"][layer])):
+                cols.append(f"attn_maps_{layer}_{head}")
+        table = wandb.Table(columns=cols)
+        
+        mol = Chem.MolFromSmiles(batch.smiles[0])
+        img = Draw.MolToImage(mol, size=(300, 300))
+        row = [batch.smiles[0], wandb.Image(img), y_true[0], y_pred[0]]
+        
+        n_nodes = batch.ptr[1]
+        edge_num = torch.bincount(batch.batch[batch.edge_index[0]], minlength=int(batch.batch.max()) + 1)
+        n_edges = edge_num[0]
+        n_substructures = batch.n_substructure_instances[0]
+
+        row.append(n_nodes)
+        row.append(n_edges)
+        row.append(n_substructures)
+        row.append(str(batch.node_data[:n_nodes].detach().cpu().numpy().tolist()))
+        row.append(str(batch.edge_data[:n_edges].detach().cpu().numpy().tolist()))
+        row.append(str(batch.substructure_instances[:n_substructures].detach().cpu().numpy().tolist()))
+
+        for layer in range(len(attn_dict["maps"])):
+            for head in range(len(attn_dict["maps"][layer])):
+                fig = self.create_attention_heatmap(attn_dict["maps"][layer][head][0], layer, head) # 0th graph in batch
+                row.append(wandb.Image(fig))
+                plt.close(fig)
+
+        table.add_data(*row)
+        wandb.log({"sample": table}, step=self.global_step+1)
+
+    def create_attention_heatmap(self, attention, layer, head):
+        fig, ax = plt.subplots(figsize=(4, 4))
+        cax = ax.matshow(attention.detach().cpu().numpy(), cmap="viridis")
+        ax.set_title(f"Layer {layer}, Head {head}")
+        plt.tight_layout()
+        return fig
+
     def training_step(self, batch, batch_idx):
-        loss = self._common_step(batch)
+        loss = self._common_step(batch, log_attention=batch_idx == 0)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams["batch_size"])
         return loss
 

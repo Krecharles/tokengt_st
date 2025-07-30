@@ -26,6 +26,7 @@ def create_model(config, num_atoms, num_edges, n_substructures):
             lr=config["lr"],
             batch_size=config["batch_size"],
             weight_decay=config["weight_decay"],
+            return_attention=True,
         )
     elif config["architecture"] == "TokenGT_Paper_Sum":
         return TokenGTPaperGraphRegression(
@@ -41,7 +42,8 @@ def create_model(config, num_atoms, num_edges, n_substructures):
             batch_size=config["batch_size"],
             weight_decay=config["weight_decay"],
             substructure_mode="sum",
-            n_substructures=n_substructures
+            n_substructures=n_substructures,
+            return_attention=True,
         )
     else:
         raise ValueError(f"Unknown architecture: {config['architecture']}")
@@ -126,13 +128,14 @@ def parse_arguments(config):
     
     for key, value in vars(args).items():
         # handle boolean flags
-        if key.endswith("_yes"):
+        if key.endswith("_yes") and value:
             config[key[:-4]] = True
-        elif key.endswith("_no"):
+        elif key.endswith("_no") and value:
             config[key[:-3]] = False
         elif value is not None:
             config[key] = value
     
+    print(config)
     return config
 
 def train(config):
