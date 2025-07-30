@@ -20,6 +20,7 @@ class ZincDataset(pl.LightningDataModule):
         node_id_mode: str = "orf",
         smarts_patterns: List[List[str]] = [],
         embed_smarts: bool = False,
+        subset: bool = True,
     ):
         super().__init__()
         self.batch_size = batch_size
@@ -28,9 +29,10 @@ class ZincDataset(pl.LightningDataModule):
         self.node_id_mode = node_id_mode
         self.smarts_patterns = smarts_patterns
         self.embed_smarts = embed_smarts
-        
+        self.subset = subset
+
         flatten = lambda lst: [item for sublist in lst for item in sublist]
-        self.root_f = f"data/zinc_{d_p}_{embed_smarts}_{'_'.join(flatten(self.smarts_patterns))}"
+        self.root_f = f"data/zinc_{d_p}_{embed_smarts}_{len(flatten(self.smarts_patterns))}_{subset}"
         
         self.transform = self.get_transforms()
 
@@ -47,9 +49,9 @@ class ZincDataset(pl.LightningDataModule):
 
 
     def setup(self, stage: Optional[str] = None):
-        self.train = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="train")
-        self.val = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="val")
-        self.test = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="test")
+        self.train = ZincSmilesDataset(root=self.root_f, subset=self.subset, pre_transform=self.transform, split="train")
+        self.val = ZincSmilesDataset(root=self.root_f, subset=self.subset, pre_transform=self.transform, split="val")
+        self.test = ZincSmilesDataset(root=self.root_f, subset=self.subset, pre_transform=self.transform, split="test")
 
     def train_dataloader(self):
         return DataLoader(
