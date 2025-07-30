@@ -59,8 +59,9 @@ def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
             embed_smarts=config["embed_smarts"],
             target_idx=config["target_idx"],
         )
-        num_atoms = 100 * 9
-        num_edges = 100 * 4
+        node_dim = 9 + n_substructures if config["embed_smarts"] else 9
+        num_atoms = QM9Dataset.SINGLE_EMB_OFFSET * node_dim
+        num_edges = 5 * QM9Dataset.SINGLE_EMB_OFFSET
     elif config["dataset"] == "ZINC":
         data_module = ZincDataset(
             batch_size=config["batch_size"],
@@ -70,7 +71,8 @@ def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
             smarts_patterns=smarts_patterns,
             embed_smarts=config["embed_smarts"],
         )
-        num_atoms = 28 + n_substructures if config["embed_smarts"] else 28
+        node_dim = 1 + n_substructures if config["embed_smarts"] else 1 
+        num_atoms = ZincDataset.SINGLE_EMB_OFFSET * node_dim
         num_edges = 5
     elif config["dataset"] == "PCQM4M":
         data_module = PCQM4MDataset(
@@ -79,8 +81,9 @@ def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
             d_p=config["D_P"],
             node_id_mode=config["node_id_mode"],
         )
-        num_atoms = 512 * 9
-        num_edges = 512 * 4
+        node_dim = 9 + n_substructures if config["embed_smarts"] else 9
+        num_atoms = PCQM4MDataset.SINGLE_EMB_OFFSET * node_dim
+        num_edges = 4 * PCQM4MDataset.SINGLE_EMB_OFFSET
     else:
         raise ValueError(f"Unknown dataset: {config['dataset']}")
     return data_module, num_atoms, num_edges

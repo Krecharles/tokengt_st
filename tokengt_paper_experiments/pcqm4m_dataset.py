@@ -25,6 +25,8 @@ def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
     )
 
 class PCQM4MDataset(pl.LightningDataModule):
+    SINGLE_EMB_OFFSET = 512
+    
     def __init__(
         self,
         batch_size: int = 512,
@@ -48,13 +50,13 @@ class PCQM4MDataset(pl.LightningDataModule):
         self.transform = self.get_transforms()
 
     def get_transforms(self) -> Compose:
-        transforms = [
-            AddTokenGTPaperNodeIdentifiers(self.d_p),
-        ]
+        transforms = []
         if len(self.smarts_patterns) > 0:
             transforms.append(AddSmartsInstances(self.smarts_patterns))
             if self.embed_smarts:
                 transforms.append(AddSubstructureEmbeddings(len(self.smarts_patterns)))
+
+        transforms.append(AddTokenGTPaperNodeIdentifiers(self.d_p, convert_to_single_emb_offset=self.SINGLE_EMB_OFFSET))
 
         return Compose(transforms)
 
