@@ -142,7 +142,6 @@ def parse_arguments(config):
     return config
 
 def train(config):
-    model_name = f"{config['architecture']}_{config['dataset']}_target{config['target_idx']}"
 
     pl.seed_everything(config["seed"], workers=True)
 
@@ -150,9 +149,16 @@ def train(config):
     n_substructures = len(smarts_patterns)
 
     data_module, num_atoms, num_edges = get_data_module_and_sizes(config, smarts_patterns, n_substructures)
-    model = create_model(config, num_atoms, num_edges, n_substructures)
-
+    
     wandb_logger = WandbLogger()
+
+    model = create_model(config, num_atoms, num_edges, n_substructures)
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total parameters: {total_params:,}")
+    wandb_logger.experiment.log({"total_parameters": total_params})
+    model_name = f"{config['architecture']}_{config['dataset']}_params{total_params}_seed{config['seed']}"
+
+    checkpoint_path = load_checkpoint_path(model_name)
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=f"./checkpoints/{model_name}",
@@ -174,11 +180,6 @@ def train(config):
         callbacks=[checkpoint_callback] if config["checkpointing"] else None
     )
     
-    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total parameters: {total_params:,}")
-    wandb_logger.experiment.log({"total_parameters": total_params})
-
-    checkpoint_path = load_checkpoint_path(model_name)
 
     trainer.fit(model, data_module, ckpt_path=checkpoint_path if config["checkpointing"] else None)
     trainer.test(model, data_module)
