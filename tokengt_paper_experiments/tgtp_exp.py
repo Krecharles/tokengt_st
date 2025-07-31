@@ -27,6 +27,7 @@ def create_model(config, num_atoms, num_edges, n_substructures):
             batch_size=config["batch_size"],
             weight_decay=config["weight_decay"],
             return_attention=True,
+            use_interaction_bias=config["use_interaction_bias"],
         )
     elif config["architecture"] == "TokenGT_Paper_Sum":
         return TokenGTPaperGraphRegression(
@@ -44,9 +45,11 @@ def create_model(config, num_atoms, num_edges, n_substructures):
             substructure_mode="sum",
             n_substructures=n_substructures,
             return_attention=True,
+            use_interaction_bias=config["use_interaction_bias"],
         )
     else:
         raise ValueError(f"Unknown architecture: {config['architecture']}")
+
 
 def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
     if config["dataset"] == "QM9":
@@ -71,7 +74,7 @@ def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
             smarts_patterns=smarts_patterns,
             embed_smarts=config["embed_smarts"],
         )
-        node_dim = 1 + n_substructures if config["embed_smarts"] else 1 
+        node_dim = 1 + n_substructures if config["embed_smarts"] else 1
         num_atoms = ZincDataset.SINGLE_EMB_OFFSET * node_dim
         num_edges = 5
     elif config["dataset"] == "PCQM4M":
@@ -88,6 +91,7 @@ def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
         raise ValueError(f"Unknown dataset: {config['dataset']}")
     return data_module, num_atoms, num_edges
 
+
 def load_checkpoint_path(model_name):
     if os.path.exists(f"./checkpoints/{model_name}"):
         if len(os.listdir(f"./checkpoints/{model_name}")) == 0:
@@ -99,36 +103,47 @@ def load_checkpoint_path(model_name):
             print("Multiple checkpoints found, please delete one")
             exit()
 
+
 def parse_arguments(config):
     parser = argparse.ArgumentParser(description='TokenGT Paper Experiments')
-    
-    parser.add_argument('--architecture', type=str, choices=['TokenGT_Paper', 'TokenGT_Paper_Sum'], 
-                       help='Model architecture')
-    parser.add_argument('--dataset', type=str, choices=['ZINC', 'QM9', 'PCQM4M'], 
-                       help='Dataset to use')
-    parser.add_argument('--target_idx', type=int, help='Target index for QM9 dataset')
-    
-    parser.add_argument('--embed_smarts_yes', action='store_true', help='Enable SMARTS embedding')
-    parser.add_argument('--embed_smarts_no', action='store_true', help='Disable SMARTS embedding')
-    parser.add_argument('--checkpointing_yes', action='store_true', help='Enable checkpointing')
-    parser.add_argument('--checkpointing_no', action='store_true', help='Disable checkpointing')
-    
-    parser.add_argument('--node_id_mode', type=str, choices=['orf', 'laplacian'], help='Node ID mode')
-    parser.add_argument('--D_P', type=int, help='Positional encoding dimension')
-    parser.add_argument('--num_heads', type=int, help='Number of attention heads')
+
+    parser.add_argument('--architecture', type=str, choices=['TokenGT_Paper', 'TokenGT_Paper_Sum'],
+                        help='Model architecture')
+    parser.add_argument('--dataset', type=str, choices=['ZINC', 'QM9', 'PCQM4M'],
+                        help='Dataset to use')
+    parser.add_argument('--target_idx', type=int,
+                        help='Target index for QM9 dataset')
+
+    parser.add_argument('--embed_smarts_yes',
+                        action='store_true', help='Enable SMARTS embedding')
+    parser.add_argument('--embed_smarts_no',
+                        action='store_true', help='Disable SMARTS embedding')
+    parser.add_argument('--checkpointing_yes',
+                        action='store_true', help='Enable checkpointing')
+    parser.add_argument('--checkpointing_no',
+                        action='store_true', help='Disable checkpointing')
+
+    parser.add_argument('--node_id_mode', type=str,
+                        choices=['orf', 'laplacian'], help='Node ID mode')
+    parser.add_argument('--D_P', type=int,
+                        help='Positional encoding dimension')
+    parser.add_argument('--num_heads', type=int,
+                        help='Number of attention heads')
     parser.add_argument('--d', type=int, help='Hidden dimension')
-    parser.add_argument('--num_encoder_layers', type=int, help='Number of encoder layers')
+    parser.add_argument('--num_encoder_layers', type=int,
+                        help='Number of encoder layers')
     parser.add_argument('--dropout', type=float, help='Dropout rate')
-    
+
     parser.add_argument('--epochs', type=int, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, help='Batch size')
     parser.add_argument('--lr', type=float, help='Learning rate')
-    parser.add_argument('--num_workers', type=int, help='Number of workers for data loading')
+    parser.add_argument('--num_workers', type=int,
+                        help='Number of workers for data loading')
     parser.add_argument('--weight_decay', type=float, help='Weight decay')
     parser.add_argument('--seed', type=int, help='Random seed')
-    
+
     args = parser.parse_args()
-    
+
     for key, value in vars(args).items():
         # handle boolean flags
         if key.endswith("_yes") and value:
@@ -137,9 +152,10 @@ def parse_arguments(config):
             config[key[:-3]] = False
         elif value is not None:
             config[key] = value
-    
+
     print(config)
     return config
+
 
 def train(config):
 
@@ -148,12 +164,14 @@ def train(config):
     smarts_patterns = get_qm9_smarts_patterns()
     n_substructures = len(smarts_patterns)
 
-    data_module, num_atoms, num_edges = get_data_module_and_sizes(config, smarts_patterns, n_substructures)
-    
+    data_module, num_atoms, num_edges = get_data_module_and_sizes(
+        config, smarts_patterns, n_substructures)
+
     wandb_logger = WandbLogger()
 
     model = create_model(config, num_atoms, num_edges, n_substructures)
-    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params = sum(p.numel()
+                       for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {total_params:,}")
     wandb_logger.experiment.log({"total_parameters": total_params})
     model_name = f"{config['architecture']}_{config['dataset']}_params{total_params}_seed{config['seed']}"
@@ -163,8 +181,8 @@ def train(config):
     checkpoint_callback = ModelCheckpoint(
         dirpath=f"./checkpoints/{model_name}",
         monitor="val_loss",
-        mode="min",     
-        save_top_k=1,   
+        mode="min",
+        save_top_k=1,
         filename="{epoch}-{val_loss:.4f}",
         save_last=False
     )
@@ -179,9 +197,9 @@ def train(config):
         default_root_dir=f"./",
         callbacks=[checkpoint_callback] if config["checkpointing"] else None
     )
-    
 
-    trainer.fit(model, data_module, ckpt_path=checkpoint_path if config["checkpointing"] else None)
+    trainer.fit(model, data_module,
+                ckpt_path=checkpoint_path if config["checkpointing"] else None)
     trainer.test(model, data_module)
 
     # Save trained model
@@ -189,14 +207,16 @@ def train(config):
     save_path = f"trained_models/{model_name}/model.pt"
     torch.save(model, save_path)
 
+
 def main():
 
     config = {
-        "architecture": ["TokenGT_Paper", "TokenGT_Paper_Sum"][0],
+        "architecture": ["TokenGT_Paper", "TokenGT_Paper_Sum"][1],
         "dataset": ["ZINC", "QM9", "PCQM4M"][0],
         "target_idx": 2,  # HOMO
-        "embed_smarts": False, # Whether to add the smarts patterns to the node features (and one-hot encode the group index)
-        
+        # Whether to add the smarts patterns to the node features (and one-hot encode the group index)
+        "embed_smarts": False,
+
         "node_id_mode": ["orf", "laplacian"][1],
         "D_P": 64,
         "num_heads": 16,
@@ -204,13 +224,14 @@ def main():
         "num_encoder_layers": 4,
 
         "epochs": 50,
-        "batch_size": 128,
+        "batch_size": 7,
         "lr": 0.001,
         "num_workers": 8,
         "weight_decay": 0.1,
         "dropout": 0.1,
         "checkpointing": False,
         "seed": 1,
+        "use_interaction_bias": True,
     }
 
     config = parse_arguments(config)
@@ -226,4 +247,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

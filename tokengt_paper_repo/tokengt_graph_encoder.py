@@ -88,7 +88,7 @@ class TokenGTGraphEncoder(nn.Module):
 
             substructure_mode: str = None, #"sum" or None
             n_substructures: int = 0,
-
+            use_interaction_bias: bool = False,
     ) -> None:
 
         super().__init__()
@@ -99,6 +99,9 @@ class TokenGTGraphEncoder(nn.Module):
         self.traceable = traceable
         self.performer = performer
         self.performer_finetune = performer_finetune
+        self.substructure_mode = substructure_mode
+        self.n_substructures = n_substructures
+        self.use_interaction_bias = use_interaction_bias
 
         if substructure_mode == None:
             self.graph_feature = GraphFeatureTokenizer(
@@ -218,6 +221,8 @@ class TokenGTGraphEncoder(nn.Module):
             # keeping track of when to redraw projections for all attention layers
             self.performer_auto_check_redraw = performer_auto_check_redraw
             self.performer_proj_updater = ProjectionUpdater(self.layers, performer_feature_redraw_interval)
+        
+        self.interaction_bias_embeddings = nn.Embedding(6, 1)
 
     def performer_fix_projection_matrices_(self):
         self.performer_proj_updater.feature_redraw_interval = None
@@ -321,10 +326,16 @@ class TokenGTGraphEncoder(nn.Module):
         if attn_mask is not None:
             raise NotImplementedError
 
+        if self.use_interaction_bias:
+            attn_bias = self.get_attention_bias(batched_data, x)
+        else:
+            attn_bias = None
+
+
         attn_dict = {'maps': {}, 'padded_index': padded_index}
         for i in range(len(self.layers)):
             layer = self.layers[i]
-            x, attn = layer(x, self_attn_padding_mask=padding_mask, self_attn_mask=attn_mask, self_attn_bias=None)
+            x, attn = layer(x, self_attn_padding_mask=padding_mask, self_attn_mask=attn_mask, self_attn_bias=attn_bias)
             if not last_state_only:
                 inner_states.append(x)
             attn_dict['maps'][i] = attn
@@ -338,3 +349,50 @@ class TokenGTGraphEncoder(nn.Module):
             return torch.stack(inner_states), graph_rep, attn_dict
         else:
             return inner_states, graph_rep, attn_dict
+
+    def get_attention_bias(self, batched_data, x):
+        (
+            batch,
+            ptr,
+            edge_index,
+        ) = (
+            batched_data["batch"],
+            batched_data["ptr"],
+            batched_data["edge_index"],
+        )
+
+        max_len, batch_size,_ = x.size()
+
+
+        node_num = ptr[1:] - ptr[:-1]
+        edge_num = torch.bincount(batch[edge_index[0]], minlength=int(batch.max()) + 1)
+        if self.substructure_mode == "sum":
+            n_substructures = batched_data.n_substructure_instances
+        else:
+            n_substructures = torch.zeros(len(ptr) - 1, device=ptr.device, dtype=ptr.dtype)
+        
+        # Create token type vectors using prime numbers
+        # 2 for nodes, 3 for edges, 5 for substructures
+        token_types = torch.zeros(batch_size, max_len, device=ptr.device)
+        
+        for i in range(batch_size):
+            n_nodes = node_num[i]
+            n_edges = edge_num[i]
+            n_subs = n_substructures[i]
+            
+            token_types[i, :n_nodes] = 2  # nodes
+            token_types[i, n_nodes:n_nodes+n_edges] = 3  # edges
+            if n_subs > 0:
+                token_types[i, n_nodes+n_edges:n_nodes+n_edges+n_subs] = 5  # substructures
+        
+        from_types = token_types.unsqueeze(-1)  # (batch_size, max_len, 1)
+        to_types = token_types.unsqueeze(-2)     # (batch_size, 1, max_len)
+        interaction_products = from_types * to_types  # (batch_size, max_len, max_len)
+        
+        unique_products = torch.tensor([4, 6, 10, 9, 15, 25], device=ptr.device)
+        
+        interaction_types = torch.searchsorted(unique_products, interaction_products.flatten()).reshape_as(interaction_products)
+        
+        attention_bias = self.interaction_bias_embeddings(interaction_types).squeeze(-1)
+        
+        return attention_bias 
