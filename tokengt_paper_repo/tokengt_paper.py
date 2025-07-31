@@ -26,6 +26,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         substructure_mode=None,
         n_substructures=0,
         return_attention=False,
+        use_interaction_bias=False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -66,6 +67,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             substructure_mode=substructure_mode,
             n_substructures=n_substructures,
             return_attention=return_attention,
+            use_interaction_bias=use_interaction_bias,
             # >
         )
         self.lm = nn.Linear(d, 1)
