@@ -99,7 +99,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             img = Draw.MolToImage(mol, size=(300, 300))
             row = [batch.smiles[i], wandb.Image(img), y_true[i], y_pred[i]]
             
-            n_nodes = batch.ptr[i+1]
+            n_nodes = batch.ptr[i+1] - batch.ptr[i]
             edge_num = torch.bincount(batch.batch[batch.edge_index[0]], minlength=int(batch.batch.max()) + 1)
             n_edges = edge_num[i]
             n_substructures = batch.n_substructure_instances[i]
