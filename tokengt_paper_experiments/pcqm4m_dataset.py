@@ -35,6 +35,7 @@ class PCQM4MDataset(pl.LightningDataModule):
         node_id_mode: str = "orf",
         smarts_patterns: List[List[str]] = [],
         embed_smarts: bool = False,
+        dataset_fraction: float = 1.0,
     ):
         super().__init__()
         self.batch_size = batch_size
@@ -43,6 +44,7 @@ class PCQM4MDataset(pl.LightningDataModule):
         self.node_id_mode = node_id_mode
         self.smarts_patterns = smarts_patterns
         self.embed_smarts = embed_smarts
+        self.dataset_fraction = dataset_fraction
         
         flatten = lambda lst: [item for sublist in lst for item in sublist]
         self.root_f = f"data/pcqm4m_{d_p}_{embed_smarts}_{'_'.join(flatten(self.smarts_patterns))}"
@@ -79,6 +81,12 @@ class PCQM4MDataset(pl.LightningDataModule):
             from_smiles=ogb_from_smiles_wrapper,
             transform=self.transform
         )
+
+        if self.dataset_fraction < 1.0:
+            self.train = self.train[:int(len(self.train) * self.dataset_fraction)]
+            self.val = self.val[:int(len(self.val) * self.dataset_fraction)]
+            # self.test = self.test.shuffle()[:int(len(self.test) * self.dataset_fraction)]
+            print(f"Using {self.dataset_fraction*100}% of dataset: train={len(self.train)}, val={len(self.val)}, test={len(self.test)}")
 
     def train_dataloader(self):
         return DataLoader(

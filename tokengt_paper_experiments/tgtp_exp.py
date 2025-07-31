@@ -83,6 +83,9 @@ def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
             num_workers=config["num_workers"],
             d_p=config["D_P"],
             node_id_mode=config["node_id_mode"],
+            smarts_patterns=smarts_patterns,
+            embed_smarts=config["embed_smarts"],
+            dataset_fraction=0.05,
         )
         node_dim = 9 + n_substructures if config["embed_smarts"] else 9
         num_atoms = PCQM4MDataset.SINGLE_EMB_OFFSET * node_dim
@@ -162,6 +165,7 @@ def train(config):
     pl.seed_everything(config["seed"], workers=True)
 
     smarts_patterns = get_qm9_smarts_patterns()
+    # smarts_patterns = []
     n_substructures = len(smarts_patterns)
 
     data_module, num_atoms, num_edges = get_data_module_and_sizes(
@@ -195,7 +199,8 @@ def train(config):
         precision="16-mixed",
         gradient_clip_val=5.0,
         default_root_dir=f"./",
-        callbacks=[checkpoint_callback] if config["checkpointing"] else None
+        callbacks=[checkpoint_callback] if config["checkpointing"] else None,
+        # val_check_interval=0.2,
     )
 
     trainer.fit(model, data_module,
@@ -211,8 +216,8 @@ def train(config):
 def main():
 
     config = {
-        "architecture": ["TokenGT_Paper", "TokenGT_Paper_Sum"][1],
-        "dataset": ["ZINC", "QM9", "PCQM4M"][0],
+        "architecture": ["TokenGT_Paper", "TokenGT_Paper_Sum"][0],
+        "dataset": ["ZINC", "QM9", "PCQM4M"][2],
         "target_idx": 2,  # HOMO
         # Whether to add the smarts patterns to the node features (and one-hot encode the group index)
         "embed_smarts": False,
@@ -220,18 +225,18 @@ def main():
         "node_id_mode": ["orf", "laplacian"][1],
         "D_P": 64,
         "num_heads": 16,
-        "d": 64,
+        "d": 128,
         "num_encoder_layers": 4,
 
-        "epochs": 50,
-        "batch_size": 7,
-        "lr": 0.001,
-        "num_workers": 8,
+        "epochs": 10,
+        "batch_size": 512,
+        "lr": 0.0002,
+        "num_workers": 16,
         "weight_decay": 0.1,
         "dropout": 0.1,
         "checkpointing": False,
         "seed": 1,
-        "use_interaction_bias": True,
+        "use_interaction_bias": False,
     }
 
     config = parse_arguments(config)
