@@ -30,8 +30,11 @@ class AddSmartsInstances(BaseTransform):
                     instances = mol.GetSubstructMatches(pattern)
                     instances = [[group_idx] + list(instance) + [-1] * (self._max_atoms - len(instance)) for instance in instances]
                     substructure_instances.extend(instances)
-
-        data["substructure_instances"] = torch.tensor(substructure_instances, dtype=torch.long)
+        
+        if len(substructure_instances) == 0:
+            data["substructure_instances"] = torch.zeros((0, self._max_atoms + 1), dtype=torch.long)
+        else:
+            data["substructure_instances"] = torch.tensor(substructure_instances, dtype=torch.long)
         data["n_substructure_instances"] = torch.tensor(len(substructure_instances), dtype=torch.long)
         return data
 

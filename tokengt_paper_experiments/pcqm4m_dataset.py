@@ -47,7 +47,7 @@ class PCQM4MDataset(pl.LightningDataModule):
         self.dataset_fraction = dataset_fraction
         
         flatten = lambda lst: [item for sublist in lst for item in sublist]
-        self.root_f = f"data/pcqm4m_{d_p}_{embed_smarts}_{'_'.join(flatten(self.smarts_patterns))}"
+        self.root_f = f"data/pcqm4m_{d_p}_{embed_smarts}_{len(flatten(self.smarts_patterns))}"
         
         self.transform = self.get_transforms()
 
@@ -84,7 +84,7 @@ class PCQM4MDataset(pl.LightningDataModule):
 
         if self.dataset_fraction < 1.0:
             self.train = self.train[:int(len(self.train) * self.dataset_fraction)]
-            self.val = self.val[:int(len(self.val) * self.dataset_fraction)]
+            self.val = self.val[:int(len(self.val) * 0.33)]
             # self.test = self.test.shuffle()[:int(len(self.test) * self.dataset_fraction)]
             print(f"Using {self.dataset_fraction*100}% of dataset: train={len(self.train)}, val={len(self.val)}, test={len(self.test)}")
 
