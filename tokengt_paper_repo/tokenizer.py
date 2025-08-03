@@ -45,7 +45,7 @@ class GraphFeatureTokenizer(nn.Module):
         self.atom_encoder = nn.Embedding(num_atoms, hidden_dim, padding_idx=0)
         self.edge_encoder = nn.Embedding(num_edges, hidden_dim, padding_idx=0)
         self.graph_token = nn.Embedding(1, hidden_dim)
-        self.null_token = nn.Embedding(1, hidden_dim)  # this is optional
+        # self.null_token = nn.Embedding(1, hidden_dim)  # this is optional
 
         self.rand_node_id = rand_node_id
         self.rand_node_id_dim = rand_node_id_dim
@@ -199,14 +199,14 @@ class GraphFeatureTokenizer(nn.Module):
         """
         b, _, d = padded_feature.size()
 
-        num_special_tokens = 2
+        num_special_tokens = 1
         graph_token_feature = self.graph_token.weight.expand(b, 1, d)  # [1, D]
-        null_token_feature = self.null_token.weight.expand(b, 1, d)  # [1, D], this is optional
-        special_token_feature = torch.cat((graph_token_feature, null_token_feature), dim=1)  # [B, 2, D]
+        # null_token_feature = self.null_token.weight.expand(b, 1, d)  # [1, D], this is optional
+        # special_token_feature = torch.cat((graph_token_feature, null_token_feature), dim=1)  # [B, 2, D]
         special_token_mask = torch.zeros(b, num_special_tokens, dtype=torch.bool, device=padded_feature.device)
 
-        padded_feature = torch.cat((special_token_feature, padded_feature), dim=1)  # [B, 2 + T, D]
-        padding_mask = torch.cat((special_token_mask, padding_mask), dim=1)  # [B, 2 + T]
+        padded_feature = torch.cat((graph_token_feature, padded_feature), dim=1)  # [B, 1 + T, D]
+        padding_mask = torch.cat((special_token_mask, padding_mask), dim=1)  # [B, 1 + T]
         return padded_feature, padding_mask
 
     def forward(self, batched_data, perturb=None):

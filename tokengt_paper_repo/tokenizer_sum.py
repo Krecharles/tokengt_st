@@ -220,7 +220,14 @@ class GraphFeatureTokenizerSum(GraphFeatureTokenizer):
 
         substructure_type_embed = self.substructure_type_encoder(keys)
         substructure_index_embed = torch.cat([substr_index_sum, substr_index_sum], dim=1)
-        padded_feature[padded_token_mask] = substructure_type_embed + self.lap_encoder(substructure_index_embed)
+        if self.lap_node_id:
+            padded_feature[padded_token_mask] = substructure_type_embed + self.lap_encoder(substructure_index_embed)
+        elif self.orf_node_id:
+            padded_feature[padded_token_mask] = substructure_type_embed + self.orf_encoder(substructure_index_embed)
+        elif self.rand_node_id:
+            padded_feature[padded_token_mask] = substructure_type_embed + self.rand_encoder(substructure_index_embed)
+        else:
+            raise ValueError("No node id mode selected")
 
         padded_feature, padding_mask = self.add_special_tokens(padded_feature, padding_mask)  # [B, 2+T, D], [B, 2+T]
 
