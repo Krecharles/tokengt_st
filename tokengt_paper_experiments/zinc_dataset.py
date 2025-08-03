@@ -7,6 +7,7 @@ from typing import List, Optional
 from tokengt_paper_repo.wrapper import AddTokenGTPaperNodeIdentifiers
 from models.add_smarts_instances import AddSubstructureEmbeddings, AddSmartsInstances
 from tokengt_experiments.zinc.zinc_smiles_dataset import ZincSmilesDataset
+from torch_geometric.transforms import AddLaplacianEigenvectorPE
 
 class ZincDataset(pl.LightningDataModule):
 
@@ -21,6 +22,7 @@ class ZincDataset(pl.LightningDataModule):
         smarts_patterns: List[List[str]] = [],
         embed_smarts: bool = False,
         subset: bool = True,
+        add_pe: bool = False,
     ):
         super().__init__()
         self.batch_size = batch_size
@@ -30,6 +32,7 @@ class ZincDataset(pl.LightningDataModule):
         self.smarts_patterns = smarts_patterns
         self.embed_smarts = embed_smarts
         self.subset = subset
+        self.add_pe = add_pe
 
         flatten = lambda lst: [item for sublist in lst for item in sublist]
         self.root_f = f"data/zinc_{d_p}_{embed_smarts}_{len(flatten(self.smarts_patterns))}_{subset}"
@@ -38,6 +41,8 @@ class ZincDataset(pl.LightningDataModule):
 
     def get_transforms(self) -> Compose:
         transforms = []
+        if self.add_pe:
+            transforms.append(AddLaplacianEigenvectorPE(k=self.d_p, attr_name='pe'))
         if len(self.smarts_patterns) > 0:
             transforms.append(AddSmartsInstances(self.smarts_patterns))
             if self.embed_smarts:

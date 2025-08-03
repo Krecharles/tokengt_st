@@ -8,6 +8,7 @@ import torch
 
 from ogb.utils import smiles2graph
 from torch_geometric.data import Data
+from torch_geometric.transforms.add_positional_encoding import AddLaplacianEigenvectorPE
 
 from tokengt_paper_repo.wrapper import AddTokenGTPaperNodeIdentifiers
 from models.add_smarts_instances import AddSubstructureEmbeddings, AddSmartsInstances
@@ -36,6 +37,7 @@ class PCQM4MDataset(pl.LightningDataModule):
         smarts_patterns: List[List[str]] = [],
         embed_smarts: bool = False,
         dataset_fraction: float = 1.0,
+        add_pe: bool = False,
     ):
         super().__init__()
         self.batch_size = batch_size
@@ -45,14 +47,17 @@ class PCQM4MDataset(pl.LightningDataModule):
         self.smarts_patterns = smarts_patterns
         self.embed_smarts = embed_smarts
         self.dataset_fraction = dataset_fraction
-        
+        self.add_pe = add_pe
+
         flatten = lambda lst: [item for sublist in lst for item in sublist]
-        self.root_f = f"data/pcqm4m_{d_p}_{embed_smarts}_{len(flatten(self.smarts_patterns))}"
+        self.root_f = f"data/pcqm4m"
         
         self.transform = self.get_transforms()
 
     def get_transforms(self) -> Compose:
         transforms = []
+        if self.add_pe:
+            transforms.append(AddLaplacianEigenvectorPE(k=self.d_p, attr_name='pe'))
         if len(self.smarts_patterns) > 0:
             transforms.append(AddSmartsInstances(self.smarts_patterns))
             if self.embed_smarts:
@@ -83,9 +88,10 @@ class PCQM4MDataset(pl.LightningDataModule):
         )
 
         if self.dataset_fraction < 1.0:
-            self.train = self.train[:int(len(self.train) * self.dataset_fraction)]
-            self.val = self.val[:int(len(self.val) * 0.33)]
-            # self.test = self.test.shuffle()[:int(len(self.test) * self.dataset_fraction)]
+            shuffle_gen = torch.Generator()
+            shuffle_gen.manual_seed(42)
+            perm = torch.randperm(len(self.train), generator=shuffle_gen)
+            self.train = self.train.index_select(perm[:int(len(self.train) * self.dataset_fraction)])
             print(f"Using {self.dataset_fraction*100}% of dataset: train={len(self.train)}, val={len(self.val)}, test={len(self.test)}")
 
     def train_dataloader(self):
