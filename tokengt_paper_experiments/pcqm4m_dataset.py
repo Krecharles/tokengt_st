@@ -49,7 +49,6 @@ class PCQM4MDataset(pl.LightningDataModule):
         self.dataset_fraction = dataset_fraction
         self.add_pe = add_pe
 
-        flatten = lambda lst: [item for sublist in lst for item in sublist]
         self.root_f = f"data/pcqm4m"
         
         self.transform = self.get_transforms()
@@ -119,5 +118,5 @@ class PCQM4MDataset(pl.LightningDataModule):
             batch_size=self.batch_size, 
             num_workers=self.num_workers,
             persistent_workers=True,
-            pin_memory=True
+            pin_memory=True,
         )

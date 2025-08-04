@@ -26,7 +26,7 @@ class AddSmartsInstances(BaseTransform):
         if mol is not None:
             for group_idx, group in enumerate(self._smarts_patterns):
                 for smarts in group:
-                    pattern = Chem.MolFromSmarts(smarts)
+                    pattern = Chem.MolFromSmiles(smarts)
                     instances = mol.GetSubstructMatches(pattern)
                     instances = [[group_idx] + list(instance) + [-1] * (self._max_atoms - len(instance)) for instance in instances]
                     substructure_instances.extend(instances)
@@ -39,59 +39,17 @@ class AddSmartsInstances(BaseTransform):
         return data
 
 def get_qm9_smarts_patterns():
-    # fragments = [
-    #     # 1. Oxygen-containing carbonyls
-    #     [
-    #         "*-C(=O)-[C;D1]",       # terminal aldehyde -0.02 (#3)
-    #         "*-C(=O)-[N;D1]",       # amide -0.02 (#4)
-    #         "*=[O;D1]"              # side-chain aldehydes or ketones -0.42 (#35)
-    #     ],
-
-    #     # 2. Nitrogen-based groups
-    #     [
-    #         "*-[N;D1]",             # primary amines -0.15 (#36)
-    #         "*#[N;D1]"              # nitriles -0.13 (#38)
-    #     ],
-
-    #     # 3. Unsaturated hydrocarbons
-    #     [
-    #         "[C]=[C]",              # alkene -0.14 (#39)
-    #         "[C]#[C]",              # alkyne -0.15 (#41)
-    #         "*-[C;D2]#[C;D1;H]"     # acetylenes -0.11 (#30)
-    #     ],
-
-    #     # 4. Alkoxy and hydroxyl groups
-    #     [
-    #         "*-[O;D2]-[C;D2]-[C;D1;H3]",  # ethoxy -0.01 (#32)
-    #         "*-[O;D2]-[C;D1;H3]",         # methoxy -0.07 (#33)
-    #         "*-[O;D1]"                    # side-chain hydroxyls -0.39 (#34)
-    #     ],
-
-    #     # 5. Miscellaneous groups
-    #     [
-    #         "*-[#9,#17,#35,#53]",         # halogens -0.02 (#27)
-    #     ],
-    # ]
     mgssl_motifs = [
-        'CCN',
-        'NC=O',
-        'C1=CC=CC=C1',
-        'NC1=CC=CC=C1',
-        'CCC',
-        'CC1=CC=CC=C1',
-        'C1=CC=NC=C1',
-        'OC1=CC=CC=C1',
-        'CCO',
-        'NCCO',
-        'COC',
-        'O=CO',
-        'CN1CCCCC1',
-        'C1CCNCC1',
-        'CCS',
-        'CC[NH3+]',
-        'NCN',
-        "C=C",
-        "C=O",
+        'O=CO', # 0
+        'C=O', # 1
+        'NC=O', # 2
+        'C1=CC=CC=C1', # 3
+        'NCCO', # 4
+        'COC', # 5
+        'C=N', # 6  
+        'N=CO', # 7
+        'C=C', # 8
+        'NC1=CC=CC=C1' # 9
     ]
     mgssl_motifs = [ [m] for m in mgssl_motifs ]
     return mgssl_motifs
