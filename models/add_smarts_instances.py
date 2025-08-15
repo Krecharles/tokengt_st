@@ -61,7 +61,7 @@ class AddSubstructureEmbeddings(BaseTransform):
     feature is the number of time the given node is a member of the i-th substructure.
     """
 
-    def __init__(self, n_substructures, accumulate: bool = True):
+    def __init__(self, n_substructures, accumulate: bool = False):
         self.n_substructures = n_substructures # Number of substructures
         self.accumulate = accumulate
     

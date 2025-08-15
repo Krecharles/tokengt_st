@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from tokengt_paper_repo.wrapper import AddTokenGTPaperNodeIdentifiers
 from models.add_smarts_instances import AddSubstructureEmbeddings, AddSmartsInstances
-from tokengt_experiments.zinc.zinc_smiles_dataset import ZincSmilesDataset
+from tokengt_experiments.motif_selection.zinc_smiles_dataset import ZincSmilesDataset
 from torch_geometric.transforms import AddLaplacianEigenvectorPE
 
 class ZincDataset(pl.LightningDataModule):

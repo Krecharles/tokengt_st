@@ -86,6 +86,7 @@ def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
             smarts_patterns=smarts_patterns,
             embed_smarts=config["embed_smarts"],
             dataset_fraction=0.05,
+            prefetch_factor=config["prefetch_factor"],
         )
         node_dim = 9 + n_substructures if config["embed_smarts"] else 9
         num_atoms = PCQM4MDataset.SINGLE_EMB_OFFSET * node_dim
@@ -201,6 +202,7 @@ def train(config):
         default_root_dir=f"./",
         callbacks=[checkpoint_callback] if config["checkpointing"] else None,
         # val_check_interval=0.2,
+        # fast_dev_run=True,
     )
 
     trainer.fit(model, data_module,
@@ -223,20 +225,21 @@ def main():
         "embed_smarts": False,
 
         "node_id_mode": ["orf", "laplacian"][1],
-        "D_P": 64,
-        "num_heads": 16,
-        "d": 128,
+        "D_P": 16,
+        "num_heads": 8,
+        "d": 192,
         "num_encoder_layers": 4,
 
         "epochs": 10,
         "batch_size": 512,
-        "lr": 0.0002,
+        "lr": 0.001,
         "num_workers": 16,
-        "weight_decay": 0.1,
-        "dropout": 0.1,
+        "weight_decay": 0.0,
+        "dropout": 0.0,
         "checkpointing": False,
         "seed": 1,
         "use_interaction_bias": False,
+        "prefetch_factor": 2,
     }
 
     config = parse_arguments(config)
