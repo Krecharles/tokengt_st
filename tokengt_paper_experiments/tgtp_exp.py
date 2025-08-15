@@ -5,6 +5,8 @@ import wandb
 import os
 import argparse
 from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.utilities.model_summary import ModelSummary
+
 
 from models.add_smarts_instances import get_qm9_smarts_patterns
 from tokengt_experiments.qm9.qm9_dataset import QM9Dataset
@@ -28,6 +30,8 @@ def create_model(config, num_atoms, num_edges, n_substructures):
             weight_decay=config["weight_decay"],
             return_attention=True,
             use_interaction_bias=config["use_interaction_bias"],
+            warmup_fraction=config["warmup_fraction"],
+            min_lr_ratio=config["min_lr_ratio"],
         )
     elif config["architecture"] == "TokenGT_Paper_Sum":
         return TokenGTPaperGraphRegression(
@@ -46,6 +50,8 @@ def create_model(config, num_atoms, num_edges, n_substructures):
             n_substructures=n_substructures,
             return_attention=True,
             use_interaction_bias=config["use_interaction_bias"],
+            warmup_fraction=config["warmup_fraction"],
+            min_lr_ratio=config["min_lr_ratio"],
         )
     else:
         raise ValueError(f"Unknown architecture: {config['architecture']}")
@@ -85,7 +91,7 @@ def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
             node_id_mode=config["node_id_mode"],
             smarts_patterns=smarts_patterns,
             embed_smarts=config["embed_smarts"],
-            dataset_fraction=0.05,
+            dataset_fraction=config["dataset_fraction"],
             prefetch_factor=config["prefetch_factor"],
         )
         node_dim = 9 + n_substructures if config["embed_smarts"] else 9
@@ -175,11 +181,19 @@ def train(config):
     wandb_logger = WandbLogger()
 
     model = create_model(config, num_atoms, num_edges, n_substructures)
+    summary = ModelSummary(model, max_depth=3)
+    print(summary)
+  
     total_params = sum(p.numel()
                        for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {total_params:,}")
     wandb_logger.experiment.log({"total_parameters": total_params})
     model_name = f"{config['architecture']}_{config['dataset']}_params{total_params}_seed{config['seed']}"
+
+    layer_params = sum(p.numel()
+                       for p in model._token_gt.layers.parameters() if p.requires_grad)
+    print(f"Layer parameters: {layer_params:,}")
+    wandb_logger.experiment.log({"layer_parameters": layer_params})
 
     checkpoint_path = load_checkpoint_path(model_name)
 
@@ -202,6 +216,7 @@ def train(config):
         default_root_dir=f"./",
         callbacks=[checkpoint_callback] if config["checkpointing"] else None,
         # val_check_interval=0.2,
+        # check_val_every_n_epoch=2,
         # fast_dev_run=True,
     )
 
@@ -239,6 +254,9 @@ def main():
         "checkpointing": False,
         "seed": 1,
         "use_interaction_bias": False,
+        "dataset_fraction": 0.05,
+        "warmup_fraction": 0.1,
+        "min_lr_ratio": 0.05,
         "prefetch_factor": 2,
     }
 

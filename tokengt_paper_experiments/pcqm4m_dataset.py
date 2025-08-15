@@ -26,7 +26,7 @@ def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
     )
 
 class PCQM4MDataset(pl.LightningDataModule):
-    SINGLE_EMB_OFFSET = 512
+    SINGLE_EMB_OFFSET = 64
     
     def __init__(
         self,

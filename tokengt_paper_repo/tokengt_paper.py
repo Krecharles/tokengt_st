@@ -27,6 +27,8 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         n_substructures=0,
         return_attention=False,
         use_interaction_bias=False,
+        warmup_fraction=0.1,
+        min_lr_ratio=0.05,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -134,6 +136,9 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         return fig
 
     def training_step(self, batch, batch_idx):
+        lr = self.optimizers().param_groups[0]['lr']
+        self.logger.experiment.log({"learning_rate": lr})
+
         loss = self._common_step(batch)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams["batch_size"])
         return loss
@@ -150,4 +155,36 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams["lr"], weight_decay=self.hparams["weight_decay"])
-        return optimizer
+
+        total_steps = self.trainer.estimated_stepping_batches
+        warmup_steps = max(1, int(self.hparams["warmup_fraction"] * total_steps))
+        decay_steps = max(1, total_steps - warmup_steps)
+
+        warmup = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=0.00001,
+            end_factor=1.0,
+            total_iters=warmup_steps,
+        )
+
+        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=decay_steps,
+            eta_min=self.hparams["min_lr_ratio"] * self.hparams["lr"],
+        )
+
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[warmup, cosine],
+            milestones=[warmup_steps],
+        )
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step", 
+                "frequency": 1,
+                "name": "warmup_then_cosine",
+            },
+        }
