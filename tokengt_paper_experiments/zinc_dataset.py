@@ -3,60 +3,59 @@ from torch.utils import data
 from torch_geometric.transforms import Compose
 from torch_geometric.loader import DataLoader
 from typing import List, Optional
+import networkx as nx
 
-from tokengt_paper_repo.wrapper import AddTokenGTPaperNodeIdentifiers
-from models.add_smarts_instances import AddSubstructureEmbeddings, AddSmartsInstances
+from models.add_smarts_instances import AddSubstructureEmbeddings, AddSmartsInstances, AddSubstructureMatchesAsVNs
+from models.add_substructure_instances import AddSubstructureInstances
 from tokengt_experiments.motif_selection.zinc_smiles_dataset import ZincSmilesDataset
-from torch_geometric.transforms import AddLaplacianEigenvectorPE
 
 class ZincDataset(pl.LightningDataModule):
-
-    SINGLE_EMB_OFFSET = 30
 
     def __init__(
         self,
         batch_size: int = 512,
         num_workers: int = 4,
-        d_p: int = 32,
-        node_id_mode: str = "orf",
         smarts_patterns: List[List[str]] = [],
+        substructures_patterns: List[nx.Graph] = [],
         embed_smarts: bool = False,
-        subset: bool = True,
-        add_pe: bool = False,
+        use_mvn: bool = False,
     ):
         super().__init__()
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.d_p = d_p
-        self.node_id_mode = node_id_mode
         self.smarts_patterns = smarts_patterns
+        self.substructures_patterns = substructures_patterns
         self.embed_smarts = embed_smarts
-        self.subset = subset
-        self.add_pe = add_pe
+        self.use_mvn = use_mvn
 
         flatten = lambda lst: [item for sublist in lst for item in sublist]
-        self.root_f = f"data/zinc_{d_p}_{embed_smarts}_{len(flatten(self.smarts_patterns))}_{subset}"
+        self.root_f = f"data/zinc_{embed_smarts}_{len(flatten(self.smarts_patterns))}_{len(self.substructures_patterns)}_{use_mvn}"
         
         self.transform = self.get_transforms()
 
     def get_transforms(self) -> Compose:
         transforms = []
-        if self.add_pe:
-            transforms.append(AddLaplacianEigenvectorPE(k=self.d_p, attr_name='pe'))
         if len(self.smarts_patterns) > 0:
             transforms.append(AddSmartsInstances(self.smarts_patterns))
-            if self.embed_smarts:
-                transforms.append(AddSubstructureEmbeddings(len(self.smarts_patterns)))
-        # Add this at the end because we need to add the right offsets to the substructure embeddings.
-        transforms.append(AddTokenGTPaperNodeIdentifiers(self.d_p, convert_to_single_emb_offset=self.SINGLE_EMB_OFFSET))
+        
+        if len(self.substructures_patterns) > 0:
+            transforms.append(AddSubstructureInstances(self.substructures_patterns))
+
+        assert not self.embed_smarts or not self.use_mvn, "Cannot embed smarts and use MVN at the same time"
+
+        pattern_len = len(self.smarts_patterns) + len(self.substructures_patterns)
+        if self.embed_smarts:
+            transforms.append(AddSubstructureEmbeddings(pattern_len))
+        if self.use_mvn:
+            transforms.append(AddSubstructureMatchesAsVNs(pattern_len, 28))
 
         return Compose(transforms)
 
 
     def setup(self, stage: Optional[str] = None):
-        self.train = ZincSmilesDataset(root=self.root_f, subset=self.subset, pre_transform=self.transform, split="train")
-        self.val = ZincSmilesDataset(root=self.root_f, subset=self.subset, pre_transform=self.transform, split="val")
-        self.test = ZincSmilesDataset(root=self.root_f, subset=self.subset, pre_transform=self.transform, split="test")
+        self.train = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="train")
+        self.val = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="val")
+        self.test = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="test")
 
     def train_dataloader(self):
         return DataLoader(

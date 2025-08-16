@@ -8,7 +8,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.model_summary import ModelSummary
 
 
-from models.add_smarts_instances import get_qm9_smarts_patterns
+from models.add_smarts_instances import get_pcqm4m_xl_smarts_patterns, get_pcqm4m_smarts_patterns
 from tokengt_experiments.qm9.qm9_dataset import QM9Dataset
 from tokengt_paper_experiments.pcqm4m_dataset import PCQM4MDataset
 from tokengt_paper_experiments.zinc_dataset import ZincDataset
@@ -171,7 +171,7 @@ def train(config):
 
     pl.seed_everything(config["seed"], workers=True)
 
-    smarts_patterns = get_qm9_smarts_patterns()
+    smarts_patterns = get_pcqm4m_smarts_patterns()
     # smarts_patterns = []
     n_substructures = len(smarts_patterns)
 
@@ -242,11 +242,11 @@ def main():
         "node_id_mode": ["orf", "laplacian"][1],
         "D_P": 16,
         "num_heads": 8,
-        "d": 192,
+        "d": 64,
         "num_encoder_layers": 4,
 
         "epochs": 10,
-        "batch_size": 512,
+        "batch_size": 64,
         "lr": 0.001,
         "num_workers": 16,
         "weight_decay": 0.0,

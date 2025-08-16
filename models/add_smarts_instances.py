@@ -38,7 +38,7 @@ class AddSmartsInstances(BaseTransform):
         data["n_substructure_instances"] = torch.tensor(len(substructure_instances), dtype=torch.long)
         return data
 
-def get_qm9_smarts_patterns():
+def get_pcqm4m_smarts_patterns():
     mgssl_motifs = [
         'O=CO', # 0
         'C=O', # 1
@@ -53,6 +53,152 @@ def get_qm9_smarts_patterns():
     ]
     mgssl_motifs = [ [m] for m in mgssl_motifs ]
     return mgssl_motifs
+
+def get_pcqm4m_xl_smarts_patterns():
+    mgssl_motifs_xl = ['CC',
+        'CN',
+        'N=O',
+        'CCN',
+        '[NH3+]C1=CC=CC=C1',
+        'NO',
+        'CNO',
+        '[NH3+][O-]',
+        'C1=CC=CC=C1',
+        '[NH2+]=O',
+        'NC1=CC=CC=C1',
+        '[NH3+]O',
+        'N[O-]',
+        'C[NH3+]',
+        'CC1=CC=CC=C1',
+        'CC1CCC1',
+        'C=O',
+        'CCC=O',
+        'CCCCC',
+        'CCCCCC',
+        'C1CCC1',
+        'CCCC',
+        'CC=O',
+        'CCC',
+        'OC1=CC=CC=C1',
+        'CO',
+        'CCO',
+        'COC',
+        'CCCO',
+        'CF',
+        'C=N',
+        'CC=N',
+        'C=NC',
+        'N=CO',
+        'CS',
+        'CCS',
+        'CCCS',
+        'O=CO',
+        'C1=C[NH]C=C1',
+        'CC1=CC=C[NH]1',
+        'CC#N',
+        'C#N',
+        'CON',
+        'C1=C[NH]C=N1',
+        'C1=CN=CN=C1',
+        'CCCCO',
+        'CCCCCO',
+        'C#CC',
+        'C#CCC',
+        'CCCCCCCC',
+        'C#C',
+        'CCNO',
+        'CC=NO',
+        'C=NO',
+        'NCCO',
+        'NCN',
+        'CCCN',
+        'C=CCCC',
+        'CC1CCCO1',
+        'C=CCCCCC',
+        'C=CCC',
+        'C1CCOC1',
+        'C=C',
+        'C1=CCCCC1',
+        'C=CC',
+        'NC=O',
+        'CCCCS',
+        'OC1CCCCC1',
+        'CN1CCCC1',
+        'CC1CCCN1',
+        'C1CCNC1',
+        'C1CCCCC1',
+        'CC1CCCCC1',
+        'NC1CCCCC1',
+        'CCC#N',
+        'CCl',
+        'NC1=NC=CC=C1',
+        'C1=CC=NC=C1',
+        'C1CCNCC1',
+        'NC1=CC=CC=N1',
+        'C1=C[NH]N=C1',
+        'C=CCN',
+        'OCO',
+        'CBr',
+        'C1CNCCN1',
+        'CN1CCNCC1',
+        'CN1CCCCC1',
+        'CC1CCCNC1',
+        'C1=CSC=N1',
+        'CC1=CSC=C1',
+        'NC1CC1',
+        'C=NCC',
+        'C1CC1',
+        'C1=CSC=C1',
+        'COCO',
+        'CCCF',
+        'CCF',
+        'CNN',
+        'NN',
+        'C1=NCNN1',
+        'CN1C=CC=N1',
+        'CC1=N[NH]C=C1',
+        'CC1=CC=N[NH]1',
+        'CC1=C[NH]N=C1',
+        'CC1CC1',
+        'CCCC=N',
+        'C=NCCC',
+        'C1CCOCC1',
+        'NCO',
+        'CCCl',
+        'C=CO',
+        'CC1=CC=CO1',
+        'C1=COC=C1',
+        'NCS',
+        'CC1=NC=CC=C1',
+        'CC1=CC=CC=N1',
+        'C=CN',
+        'CC1=CC=CS1',
+        'CN1C=CN=C1',
+        'CC1=CN=C[NH]1',
+        'CC1=C[NH]C=N1',
+        'CC1=NC=NC=C1',
+        'CC1=CC=NC=N1',
+        'CC1CNCCN1',
+        'CC1=CC=CN=C1',
+        'CC1CCCC1',
+        'C1CCCC1',
+        'CC1CCCC(C)C1',
+        'CC=CN',
+        'C=NN',
+        'CC1CCNC1',
+        'C1CNC1',
+        'CCCC#N',
+        'NS',
+        'CC#CC',
+        'C1=CN=CC=N1',
+        'C1CCCCCC1',
+        'CC1=CC=NC=C1',
+        'NC1CCCC1',
+        'CCCCl',
+        'CC1CCNCC1',
+        'CC1=NC=C[NH]1']
+    mgssl_motifs_xl = [ [m] for m in mgssl_motifs_xl ]
+    return mgssl_motifs_xl
 
 
 class AddSubstructureEmbeddings(BaseTransform):
@@ -82,3 +228,44 @@ class AddSubstructureEmbeddings(BaseTransform):
         data.x = torch.cat([data.x, emb], dim=1)
 
         return data
+
+class AddSubstructureMatchesAsVNs(BaseTransform):
+    
+    def __init__(self, n_substructures, num_atoms):
+        self.n_substructures = n_substructures
+        self.num_atoms = num_atoms
+
+    def forward(self, data) -> Data:
+        if len(data.substructure_instances) == 0:
+            return data
+
+        keys = data.substructure_instances[:, 0]
+        vertices = data.substructure_instances[:, 1:]
+        
+        sub_embs = torch.zeros(keys.shape[0], data.x.shape[1])
+        sub_embs[:,0] = keys+self.num_atoms
+        data.x = torch.cat([data.x, sub_embs], dim=0)
+        
+        mask = vertices != -1
+        vn_repeat = keys.unsqueeze(1).expand_as(vertices)
+        src = vn_repeat[mask]
+        dst = vertices[mask]
+
+        vn_to_v = torch.stack([src, dst], dim=0)
+        v_to_vn = torch.stack([dst, src], dim=0)
+
+        data.edge_index = torch.cat([data.edge_index, vn_to_v, v_to_vn], dim=1)
+
+        return data
+
+# class ConvertToSingleEmb(BaseTransform):
+#     # offsets the node features by 1 so that a node feature of 0 is meaningless (padding_idx=0 in the embedding)
+#     # takes the max_value 
+
+#     def __init__(self, offset: int = 512):
+#         self.offset = offset
+
+#     def forward(self, data) -> Data:
+#         data.x = convert_to_single_emb(data.x, self.offset)
+#         data.edge_data = convert_to_single_emb(data.edge_data, self.offset)
+#         return data
