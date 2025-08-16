@@ -6,7 +6,8 @@ from typing import List, Optional
 import torch
 
 from ogb.utils import smiles2graph
-from ogb.lsc import PygPCQM4Mv2Dataset, PCQM4Mv2Evaluator
+from ogb.lsc import PCQM4Mv2Evaluator
+from tokengt_paper_repo.pcqm4mv2_pyg import PygPCQM4Mv2Dataset
 from torch_geometric.data import Data
 from torch_geometric.transforms.add_positional_encoding import AddLaplacianEigenvectorPE
 
@@ -19,9 +20,10 @@ def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
     """
     data_dict = smiles2graph(smiles, *args, **kwargs)
     return Data(
-        x=torch.from_numpy(data_dict['node_feat']),
-        edge_index=torch.from_numpy(data_dict['edge_index']),
-        edge_attr=torch.from_numpy(data_dict['edge_feat']),
+        x=data_dict['node_feat'],
+        edge_index=data_dict['edge_index'],
+        edge_attr=data_dict['edge_feat'],
+        num_nodes=data_dict['num_nodes'],
         smiles=smiles,
     )
 
@@ -67,7 +69,7 @@ class PCQM4MDataset(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
 
-        dataset = PygPCQM4Mv2Dataset(root = 'data/pcqm4m/', transform=self.get_transforms(), from_smiles=ogb_from_smiles_wrapper)
+        dataset = PygPCQM4Mv2Dataset(root = 'data/pcqm4m/', transform=self.get_transforms())
         split_idx = dataset.get_idx_split()
 
         if self.dataset_fraction < 1.0:
@@ -129,7 +131,7 @@ class PCQM4MDataset(pl.LightningDataModule):
         y_true, y_pred = [], []
         for batch in self.valid_loader:
             batch = batch.to(device)
-            pred = model(batch).view(-1,)
+            pred, _ = model(batch)
             y_true.append(batch.y.view_as(pred).detach().cpu())
             y_pred.append(pred.detach().cpu())
 
