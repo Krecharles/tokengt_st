@@ -14,6 +14,9 @@ class GCNGraphRegression(pl.LightningModule):
         dropout=0.1,
         lr=0.01,
         batch_size=512,
+        reduce_factor=0.5,
+        stopping_learning_rate=1e-6,
+        patience=5,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -69,5 +72,22 @@ class GCNGraphRegression(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams["lr"])
-        return optimizer
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams["lr"])
+        
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=self.hparams["reduce_factor"],
+            patience=self.hparams["patience"],
+            min_lr=self.hparams["stopping_learning_rate"],
+            verbose=True
+        )
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+                "frequency": 1
+            }
+        }

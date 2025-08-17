@@ -19,6 +19,9 @@ def create_model(config, num_atoms, n_substructures):
             dropout=config["dropout"],
             lr=config["lr"],
             batch_size=config["batch_size"],
+            reduce_factor=config["reduce_factor"],
+            stopping_learning_rate=config["stopping_learning_rate"],
+            patience=config["patience"],
         )
     else:
         raise ValueError(f"Unknown architecture: {config['architecture']}")
@@ -84,7 +87,9 @@ def parse_arguments(config):
     parser.add_argument('--lr', type=float, help='Learning rate')
     parser.add_argument('--num_workers', type=int,
                         help='Number of workers for data loading')
-    parser.add_argument('--weight_decay', type=float, help='Weight decay')
+    parser.add_argument('--reduce_factor', type=float, help='Learning rate reduction factor')
+    parser.add_argument('--stopping_learning_rate', type=float, help='Minimum learning rate before stopping')
+    parser.add_argument('--patience', type=int, help='Patience for learning rate reduction')
     parser.add_argument('--seed', type=int, help='Random seed')
 
     args = parser.parse_args()
@@ -178,11 +183,13 @@ def main():
 
         "epochs": 10,
         "batch_size": 64,
-        "lr": 0.001,
         "num_workers": 2,
-        "weight_decay": 0.0,
         "dropout": 0.0,
         "seed": 1,
+        "lr": 0.001,
+        "reduce_factor": 0.5,
+        "stopping_learning_rate": 1e-5,
+        "patience": 10,
     }
 
     config = parse_arguments(config)
