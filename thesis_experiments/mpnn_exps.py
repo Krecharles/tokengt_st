@@ -7,7 +7,7 @@ import networkx as nx
 
 from thesis_experiments.zinc_smarts_pattern import get_zinc_smarts_patterns, get_zinc_smarts_patterns_xl
 from tokengt_paper_experiments.zinc_dataset import ZincDataset
-from thesis_experiments.gcn_model import GCNGraphRegression
+from thesis_experiments.mpnn_models import GCNGraphRegression, GATGraphRegression
 
 def create_model(config, num_atoms, n_substructures):
     if config["architecture"] == "GCN":
@@ -16,6 +16,20 @@ def create_model(config, num_atoms, n_substructures):
             num_substructures=n_substructures if config["embed_smarts"] else 0,
             hidden_channels=config["hidden_channels"],
             num_layers=config["num_encoder_layers"],
+            dropout=config["dropout"],
+            lr=config["lr"],
+            batch_size=config["batch_size"],
+            reduce_factor=config["reduce_factor"],
+            stopping_learning_rate=config["stopping_learning_rate"],
+            patience=config["patience"],
+        )
+    elif config["architecture"] == "GAT":
+        return GATGraphRegression(
+            num_node_features=num_atoms,
+            num_substructures=n_substructures if config["embed_smarts"] else 0,
+            hidden_channels=config["hidden_channels"],
+            num_layers=config["num_encoder_layers"],
+            heads=config["heads"],
             dropout=config["dropout"],
             lr=config["lr"],
             batch_size=config["batch_size"],
@@ -55,7 +69,7 @@ def load_substructures(filepath: str):
 def parse_arguments(config):
     parser = argparse.ArgumentParser(description='MPNN Experiments')
 
-    parser.add_argument('--architecture', type=str, choices=['GCN'],
+    parser.add_argument('--architecture', type=str, choices=['GCN', 'GAT'],
                         help='Model architecture')
     parser.add_argument('--dataset', type=str, choices=['ZINC'],
                         help='Dataset to use')
@@ -80,6 +94,7 @@ def parse_arguments(config):
     parser.add_argument('--hidden_channels', type=int, help='Hidden dimension')
     parser.add_argument('--num_encoder_layers', type=int,
                         help='Number of encoder layers')
+    parser.add_argument('--heads', type=int, help='Number of heads')
     parser.add_argument('--dropout', type=float, help='Dropout rate')
 
     parser.add_argument('--epochs', type=int, help='Number of training epochs')
@@ -168,22 +183,23 @@ def train(config):
 def main():
 
     config = {
-        "architecture": ["GCN"][0],
+        "architecture": ["GCN", "GAT"][1],
         "dataset": ["ZINC"][0],
 
         # Whether to add the smarts patterns to the node features (and one-hot encode the group index)
-        "embed_smarts": True,
+        "embed_smarts": False,
         "use_mvn": False,
 
         "smarts_config": ["none", "brics", "brics_xl"][0],
         "substructures_config": ["none", "cycles"][1],
 
-        "hidden_channels": 16,
-        "num_encoder_layers": 2,
+        "hidden_channels": 145,
+        "num_encoder_layers": 4,
+        "heads": 8,
 
-        "epochs": 10,
-        "batch_size": 64,
-        "num_workers": 2,
+        "epochs": 200,
+        "batch_size": 128,
+        "num_workers": 4,
         "dropout": 0.0,
         "seed": 1,
         "lr": 0.001,
