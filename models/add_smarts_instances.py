@@ -201,65 +201,6 @@ def get_pcqm4m_xl_smarts_patterns():
     return mgssl_motifs_xl
 
 
-class AddSubstructureEmbeddings(BaseTransform):
-    """
-    Augments the node features with by n_substructures where the i-th additional 
-    feature is the number of time the given node is a member of the i-th substructure.
-    """
-
-    def __init__(self, n_substructures, accumulate: bool = False):
-        self.n_substructures = n_substructures # Number of substructures
-        self.accumulate = accumulate
-    
-    def forward(self, data) -> Data:
-        if len(data.substructure_instances) == 0:
-            emb = torch.zeros(data.x.shape[0], self.n_substructures, dtype=torch.long)
-        else:
-            keys = data.substructure_instances[:, 0]
-            vertices = data.substructure_instances[:, 1:]
-
-            valid_mask = vertices != -1
-            flat_vertices = vertices[valid_mask]
-            repeated_keys = keys.unsqueeze(1).expand_as(vertices)[valid_mask]
-
-            emb = torch.zeros(data.x.shape[0], self.n_substructures, dtype=torch.long)
-            emb.index_put_((flat_vertices, repeated_keys), torch.ones_like(flat_vertices), accumulate=self.accumulate)
-
-        data.x = torch.cat([data.x, emb], dim=1)
-
-        return data
-
-class AddSubstructureMatchesAsVNs(BaseTransform):
-    
-    def __init__(self, n_substructures, num_atoms):
-        self.n_substructures = n_substructures
-        self.num_atoms = num_atoms
-
-    def forward(self, data) -> Data:
-        if len(data.substructure_instances) == 0:
-            return data
-
-        keys = data.substructure_instances[:, 0]
-        vertices = data.substructure_instances[:, 1:]
-
-        num_vertices = data.x.shape[0]
-        
-        sub_embs = torch.zeros(keys.shape[0], data.x.shape[1])
-        sub_embs[:,0] = keys+self.num_atoms
-        data.x = torch.cat([data.x, sub_embs], dim=0)
-        
-        mask = vertices != -1
-        vn_indices = torch.arange(keys.shape[0]) + num_vertices
-        vn_repeat = vn_indices.unsqueeze(1).expand_as(vertices)
-        src = vn_repeat[mask]
-        dst = vertices[mask]
-
-        vn_to_v = torch.stack([src, dst], dim=0)
-        v_to_vn = torch.stack([dst, src], dim=0)
-
-        data.edge_index = torch.cat([data.edge_index, vn_to_v, v_to_vn], dim=1)
-
-        return data
 
 # class ConvertToSingleEmb(BaseTransform):
 #     # offsets the node features by 1 so that a node feature of 0 is meaningless (padding_idx=0 in the embedding)

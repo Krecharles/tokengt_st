@@ -51,8 +51,19 @@ def get_data_module_and_sizes(config, smarts_patterns, substructures_patterns):
             substructures_patterns=substructures_patterns,
             embed_smarts=config["embed_smarts"],
             use_mvn=config["use_mvn"],
+            use_mvn_fully_connected=config["use_mvn_fully_connected"],
+            use_mvn_sharing_connected=config["use_mvn_sharing_connected"],
+            use_global_vn=config["use_global_vn"],
         )
-        num_atoms = 28 + len(smarts_patterns) if config["use_mvn"] else 28
+        num_atoms = 28
+        if config["use_mvn"]:
+            num_atoms += len(smarts_patterns)
+        if config["use_mvn_fully_connected"]:
+            num_atoms += len(smarts_patterns)
+        if config["use_mvn_sharing_connected"]:
+            num_atoms += len(smarts_patterns)
+        if config["use_global_vn"]:
+            num_atoms += 1
     else:
         raise ValueError(f"Unknown dataset: {config['dataset']}")
     return data_module, num_atoms
@@ -91,6 +102,12 @@ def parse_arguments(config):
                         action='store_true', help='Enable MVN')
     parser.add_argument('--use_mvn_no',
                         action='store_true', help='Disable MVN')
+    parser.add_argument('--use_mvn_fully_connected_yes', action='store_true')
+    parser.add_argument('--use_mvn_fully_connected_no', action='store_true')
+    parser.add_argument('--use_mvn_sharing_connected_yes', action='store_true')
+    parser.add_argument('--use_mvn_sharing_connected_no', action='store_true')
+    parser.add_argument('--use_global_vn_yes', action='store_true')
+    parser.add_argument('--use_global_vn_no', action='store_true')
 
     parser.add_argument('--hidden_channels', type=int, help='Hidden dimension')
     parser.add_argument('--num_encoder_layers', type=int,
@@ -191,9 +208,12 @@ def main():
 
         "embed_smarts": False,
         "use_mvn": False,
+        "use_mvn_fully_connected": False,
+        "use_mvn_sharing_connected": True,
+        "use_global_vn": True,
 
-        "smarts_config": ["none", "smarts", "smarts-xl"][0],
-        "substructures_config": ["none", "cycles"][1],
+        "smarts_config": ["none", "smarts", "smarts-xl"][1],
+        "substructures_config": ["none", "cycles"][0],
 
         "hidden_channels": 145,
         "num_encoder_layers": 4,
@@ -213,7 +233,7 @@ def main():
     config = parse_arguments(config)
 
     results = []
-    for i in range(4):
+    for i in range(1):
         wandb.init(
             project=f"zinc_thesis",
             entity="krecharles-university-of-oxford",
