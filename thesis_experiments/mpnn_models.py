@@ -14,7 +14,6 @@ class BaseGraphRegression(pl.LightningModule):
             factor=self.hparams["reduce_factor"],
             patience=self.hparams["patience"],
             min_lr=self.hparams["stopping_learning_rate"],
-            verbose=True
         )
         
         return {
@@ -79,7 +78,7 @@ class GCNGraphRegression(BaseGraphRegression):
             out_channels=hidden_channels,
             dropout=dropout,
             act="relu",
-            # norm="batch_norm",
+            norm="batch_norm",
         )
         
         self.lm = nn.Linear(hidden_channels, 1)
@@ -121,12 +120,12 @@ class GATGraphRegression(BaseGraphRegression):
 
         self.gat = GAT(
             in_channels=hidden_channels,
-            hidden_channels=hidden_channels // heads,
+            hidden_channels=hidden_channels,
             num_layers=num_layers,
             out_channels=hidden_channels,
             dropout=dropout,
             act="relu",
-            # norm="batch_norm",
+            norm="batch_norm",
             heads=heads,
         )
         
