@@ -241,13 +241,16 @@ class AddSubstructureMatchesAsVNs(BaseTransform):
 
         keys = data.substructure_instances[:, 0]
         vertices = data.substructure_instances[:, 1:]
+
+        num_vertices = data.x.shape[0]
         
         sub_embs = torch.zeros(keys.shape[0], data.x.shape[1])
         sub_embs[:,0] = keys+self.num_atoms
         data.x = torch.cat([data.x, sub_embs], dim=0)
         
         mask = vertices != -1
-        vn_repeat = keys.unsqueeze(1).expand_as(vertices)
+        vn_indices = torch.arange(keys.shape[0]) + num_vertices
+        vn_repeat = vn_indices.unsqueeze(1).expand_as(vertices)
         src = vn_repeat[mask]
         dst = vertices[mask]
 
