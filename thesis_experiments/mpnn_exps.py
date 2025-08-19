@@ -73,12 +73,14 @@ def get_data_module_and_sizes(config, smarts_patterns, substructures_patterns):
     else:
         raise ValueError(f"Unknown dataset: {config['dataset']}")
 
+    pattern_len = len(smarts_patterns) + len(substructures_patterns)
+
     if config["use_mvn"]:
-        num_atoms += len(smarts_patterns)
+        num_atoms += pattern_len
     if config["use_mvn_fully_connected"]:
-        num_atoms += len(smarts_patterns)
+        num_atoms += pattern_len
     if config["use_mvn_sharing_connected"]:
-        num_atoms += len(smarts_patterns)
+        num_atoms += pattern_len
     if config["use_global_vn"]:
         num_atoms += 1
     return data_module, num_atoms
@@ -219,11 +221,11 @@ def main():
 
     config = {
         "architecture": ["GCN", "GAT"][0],
-        "dataset": ["ZINC", "MolHIV"][1],
+        "dataset": ["ZINC", "MolHIV"][0],
 
         "embed_smarts": False,
         "use_mvn": False,
-        "use_mvn_fully_connected": True,
+        "use_mvn_fully_connected": False,
         "use_mvn_sharing_connected": False,
         "use_global_vn": False,
 
@@ -265,6 +267,9 @@ def main():
     std_error = np.std(results, ddof=1) / np.sqrt(len(results))
     print(f"Mean loss: {mean_loss:.3f}, Std error: {std_error:.3f}")
     print("-"*25)
+
+    wandb.log({"mean_loss": mean_loss})
+    wandb.log({"std_error": std_error})
 
 
 if __name__ == "__main__":
