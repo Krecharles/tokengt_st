@@ -8,9 +8,12 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import Compose
 from torch_geometric.data import Data
 from rdkit import Chem
-from models.add_smarts_instances import AddSmartsInstances, AddSubstructureEmbeddings
-from tokengt_paper_repo.wrapper import AddTokenGTPaperNodeIdentifiers
+from models.add_smarts_instances import AddSmartsInstances
+from models.add_substructure_embeddings import AddSubstructureEmbeddings
+from models.add_vn_transforms import AddGlobalVN, AddSubstructureMatchesAsVNs, AddSubstructureMatchesAsVNsFullyConnected, AddSubstructureMatchesAsVNsSharingConstituentConnected
+from models.add_substructure_instances import AddSubstructureInstances
 from ogb.utils import smiles2graph
+import networkx as nx
 
 def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
     """Returns `torch_geometric.data.Data` object from smiles while
@@ -31,40 +34,61 @@ class QM9Dataset(pl.LightningDataModule):
         self,
         batch_size: int = 512,
         num_workers: int = 4,
-        d_p: int = 32,
-        node_id_mode: str = "orf",
-        data_dir: str = "data",
         smarts_patterns: List[List[str]] = [],
+        substructures_patterns: List[nx.Graph] = [],
         embed_smarts: bool = False,
+        use_mvn: bool = False,
+        use_mvn_fully_connected: bool = False,
+        use_mvn_sharing_connected: bool = False,
+        use_global_vn: bool = False,
         target_idx: int = 0,
     ):
         super().__init__()
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.d_p = d_p
-        self.node_id_mode = node_id_mode
-        self.data_dir = data_dir
         self.smarts_patterns = smarts_patterns
+        self.substructures_patterns = substructures_patterns
         self.embed_smarts = embed_smarts
         self.target_idx = target_idx
+        self.use_mvn = use_mvn  
+        self.use_mvn_fully_connected = use_mvn_fully_connected
+        self.use_mvn_sharing_connected = use_mvn_sharing_connected
+        self.use_global_vn = use_global_vn
 
         flatten = lambda lst: [item for sublist in lst for item in sublist]
-        self.root_f = f"{self.data_dir}/qm9_{node_id_mode}_{d_p}_{embed_smarts}_{'_'.join(flatten(self.smarts_patterns))}"
+        self.root_f = f"data/qm9_{embed_smarts}_{len(flatten(self.smarts_patterns))}_{len(self.substructures_patterns)}_{use_mvn}_{use_mvn_fully_connected}_{use_mvn_sharing_connected}_{use_global_vn}"
         
         self.transform = self.get_transforms()
 
     def get_transforms(self) -> Compose:
-        transforms = [
-            FormatQM9Features(self.target_idx),
-        ]
+        transforms = []
         if len(self.smarts_patterns) > 0:
             transforms.append(AddSmartsInstances(self.smarts_patterns))
-            if self.embed_smarts:
-                transforms.append(AddSubstructureEmbeddings(len(self.smarts_patterns)))
+        
+        if len(self.substructures_patterns) > 0:
+            transforms.append(AddSubstructureInstances(self.substructures_patterns))
 
-        transforms.append(AddTokenGTPaperNodeIdentifiers(self.d_p, convert_to_single_emb_offset=self.SINGLE_EMB_OFFSET))
+        assert not self.embed_smarts or not self.use_mvn, "Cannot embed smarts and use MVN at the same time"
+
+        pattern_len = len(self.smarts_patterns) + len(self.substructures_patterns)
+        total_atom_types = 28
+        if self.embed_smarts:
+            transforms.append(AddSubstructureEmbeddings(pattern_len))
+            total_atom_types += pattern_len
+        if self.use_mvn:
+            transforms.append(AddSubstructureMatchesAsVNs(pattern_len, total_atom_types))
+            total_atom_types += pattern_len
+        if self.use_mvn_fully_connected:
+            transforms.append(AddSubstructureMatchesAsVNsFullyConnected(pattern_len, total_atom_types))
+            total_atom_types += pattern_len
+        if self.use_mvn_sharing_connected:
+            transforms.append(AddSubstructureMatchesAsVNsSharingConstituentConnected(pattern_len, total_atom_types))
+            total_atom_types += pattern_len
+        if self.use_global_vn:
+            transforms.append(AddGlobalVN(total_atom_types))
 
         return Compose(transforms)
+
 
     def pre_filter(self, data):
         return Chem.MolFromSmiles(data.smiles) is not None

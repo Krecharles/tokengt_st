@@ -39,7 +39,7 @@ class MolHIVDataset(pl.LightningDataModule):
         self.use_global_vn = use_global_vn
 
         flatten = lambda lst: [item for sublist in lst for item in sublist]
-        self.root_f = f"data/molhiv_{embed_smarts}_{len(flatten(self.smarts_patterns))}_{len(self.substructures_patterns)}_{use_mvn}_{use_mvn_fully_connected}_{use_mvn_sharing_connected}_{use_global_vn}"
+        self.root_f = f"data/molhiv/molhiv_{embed_smarts}_{len(flatten(self.smarts_patterns))}_{len(self.substructures_patterns)}_{use_mvn}_{use_mvn_fully_connected}_{use_mvn_sharing_connected}_{use_global_vn}"
         
         self.transform = self.get_transforms()
 

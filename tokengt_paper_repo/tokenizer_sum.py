@@ -128,7 +128,7 @@ class GraphFeatureTokenizerSum(GraphFeatureTokenizer):
         padded_node_id[node_mask] = node_id
 
         keys = substructure_instances[:, 0] # [num_substrucs]
-        vertices = substructure_instances[:, 1:] # [num_substr, num_vertices]
+        vertices = substructure_instances[:, 1:].clone() # [num_substr, num_vertices]
         mask = vertices != -1
         vertices[~mask] = 0
 

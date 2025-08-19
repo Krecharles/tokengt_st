@@ -10,6 +10,7 @@ class AddSubstructureMatchesAsVNs(BaseTransform):
         self.num_atoms = num_atoms
 
     def forward(self, data) -> Data:
+
         if len(data.substructure_instances) == 0:
             return data
 
@@ -32,7 +33,8 @@ class AddSubstructureMatchesAsVNs(BaseTransform):
         v_to_vn = torch.stack([dst, src], dim=0)
 
         data.edge_index = torch.cat([data.edge_index, vn_to_v, v_to_vn], dim=1)
-        data.num_nodes = data.x.shape[0]
+        if data.num_nodes is None:
+            data.num_nodes = data.x.shape[0]
 
         return data
 
@@ -73,7 +75,8 @@ class AddSubstructureMatchesAsVNsFullyConnected(BaseTransform):
             vn_complete = data.edge_index.new_empty((2, 0))        
 
         data.edge_index = torch.cat([data.edge_index, vn_to_v, v_to_vn, vn_complete], dim=1)
-        data.num_nodes = data.x.shape[0]
+        if data.num_nodes is None:
+            data.num_nodes = data.x.shape[0]
         
         return data
 
@@ -128,7 +131,8 @@ class AddSubstructureMatchesAsVNsSharingConstituentConnected(BaseTransform):
             vn_shared = data.edge_index.new_empty((2, 0))
 
         data.edge_index = torch.cat([data.edge_index, vn_to_v, v_to_vn, vn_shared], dim=1)
-        data.num_nodes = data.x.shape[0]
+        if data.num_nodes is None:
+            data.num_nodes = data.x.shape[0]
 
         return data
 
@@ -152,6 +156,7 @@ class AddGlobalVN(BaseTransform):
         sub_embs = torch.zeros(f)
         sub_embs[0] = self.num_atoms
         data.x = torch.cat([data.x, sub_embs.unsqueeze(0)], dim=0)
-        data.num_nodes = data.x.shape[0]
+        if data.num_nodes is None:
+            data.num_nodes = data.x.shape[0]
 
         return data
