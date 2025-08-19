@@ -7,6 +7,7 @@ import networkx as nx
 import numpy as np
 
 from thesis_experiments.zinc_smarts_pattern import get_zinc_smarts_patterns, get_zinc_smarts_patterns_xl
+from tokengt_paper_experiments.molhiv_dataset import MolHIVDataset
 from tokengt_paper_experiments.zinc_dataset import ZincDataset
 from thesis_experiments.mpnn_models import GCNGraphRegression, GATGraphRegression
 
@@ -56,16 +57,30 @@ def get_data_module_and_sizes(config, smarts_patterns, substructures_patterns):
             use_global_vn=config["use_global_vn"],
         )
         num_atoms = 28
-        if config["use_mvn"]:
-            num_atoms += len(smarts_patterns)
-        if config["use_mvn_fully_connected"]:
-            num_atoms += len(smarts_patterns)
-        if config["use_mvn_sharing_connected"]:
-            num_atoms += len(smarts_patterns)
-        if config["use_global_vn"]:
-            num_atoms += 1
+    elif config["dataset"] == "MolHIV":
+        data_module = MolHIVDataset(
+            batch_size=config["batch_size"],
+            num_workers=config["num_workers"],
+            smarts_patterns=smarts_patterns,
+            substructures_patterns=substructures_patterns,
+            embed_smarts=config["embed_smarts"],
+            use_mvn=config["use_mvn"],
+            use_mvn_fully_connected=config["use_mvn_fully_connected"],
+            use_mvn_sharing_connected=config["use_mvn_sharing_connected"],
+            use_global_vn=config["use_global_vn"],
+        )
+        num_atoms = 88  
     else:
         raise ValueError(f"Unknown dataset: {config['dataset']}")
+
+    if config["use_mvn"]:
+        num_atoms += len(smarts_patterns)
+    if config["use_mvn_fully_connected"]:
+        num_atoms += len(smarts_patterns)
+    if config["use_mvn_sharing_connected"]:
+        num_atoms += len(smarts_patterns)
+    if config["use_global_vn"]:
+        num_atoms += 1
     return data_module, num_atoms
 
 def load_substructures(filepath: str):
@@ -83,7 +98,7 @@ def parse_arguments(config):
 
     parser.add_argument('--architecture', type=str, choices=['GCN', 'GAT'],
                         help='Model architecture')
-    parser.add_argument('--dataset', type=str, choices=['ZINC'],
+    parser.add_argument('--dataset', type=str, choices=['ZINC', 'MolHIV'],
                         help='Dataset to use')
 
     parser.add_argument('--smarts_config', type=str, 
@@ -204,13 +219,13 @@ def main():
 
     config = {
         "architecture": ["GCN", "GAT"][0],
-        "dataset": ["ZINC"][0],
+        "dataset": ["ZINC", "MolHIV"][1],
 
         "embed_smarts": False,
         "use_mvn": False,
-        "use_mvn_fully_connected": False,
-        "use_mvn_sharing_connected": True,
-        "use_global_vn": True,
+        "use_mvn_fully_connected": True,
+        "use_mvn_sharing_connected": False,
+        "use_global_vn": False,
 
         "smarts_config": ["none", "smarts", "smarts-xl"][1],
         "substructures_config": ["none", "cycles"][0],
