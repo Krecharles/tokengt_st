@@ -1,19 +1,20 @@
 def get_zinc_smarts_patterns():
     # appear 5735 times in first 1k zinc molecules
     zinc_smarts_patterns = [
-        'C=O',
-        'NC=O',
-        'C1=CC=CC=C1',
-        'NCCO',
-        'OC1=CC=CC=C1',
-        'NC1=CC=CC=C1',
-        'COC',
-        'C1=CC=NC=C1',
-        'NCN',
-        'O=S',
-        'CN1CCCCC1',
-        'C1CCNCC1',
-        'O=CO']
+        'C=O', # 0
+        'NC=O', # 1
+        'C1=CC=CC=C1', # 2
+        'NCCO', # 3
+        'OC1=CC=CC=C1', # 4
+        'NC1=CC=CC=C1', # 5
+        'COC', # 6
+        'C1=CC=NC=C1', # 7
+        'NCN', # 8
+        'O=S', # 9
+        'CN1CCCCC1', # 10
+        'C1CCNCC1', # 11
+        'O=CO' # 12
+    ]
     zinc_smarts_patterns = [ [m] for m in zinc_smarts_patterns ]
     return zinc_smarts_patterns
 

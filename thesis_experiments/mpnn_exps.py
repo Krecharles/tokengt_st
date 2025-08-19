@@ -201,7 +201,7 @@ def train(config):
         accelerator="auto",
         devices="auto",
         logger=wandb_logger,
-        precision="16-mixed",
+        # precision="16-mixed",
         # gradient_clip_val=5.0,
         default_root_dir=f"./",
         # val_check_interval=0.2,
@@ -248,18 +248,17 @@ def main():
     config = parse_arguments(config)
 
     results = []
-    for i in range(1):
+    for i in range(4):
         wandb.init(
-            project=f"zinc_thesis",
+            project=f"zinc_thesis_final_experiments",
             entity="krecharles-university-of-oxford",
             config=config,
-            mode="disabled"
+            # mode="disabled"
         )
         config["seed"] = i
         loss = train(config)
         results.append(loss)
         
-    wandb.log({"results": results})
     print("-"*25)
     print(results)
     mean_loss = np.mean(results)
