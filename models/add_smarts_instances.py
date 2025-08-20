@@ -39,7 +39,7 @@ class AddSmartsInstances(BaseTransform):
         return data
 
 def get_pcqm4m_smarts_patterns():
-    mgssl_motifs = [
+    motifs = [
         'O=CO', # 0
         'C=O', # 1
         'NC=O', # 2
@@ -51,8 +51,8 @@ def get_pcqm4m_smarts_patterns():
         'C=C', # 8
         'NC1=CC=CC=C1' # 9
     ]
-    mgssl_motifs = [ [m] for m in mgssl_motifs ]
-    return mgssl_motifs
+    motifs = [ [m] for m in motifs ]
+    return motifs
 
 def get_pcqm4m_xl_smarts_patterns():
     mgssl_motifs_xl = ['CC',

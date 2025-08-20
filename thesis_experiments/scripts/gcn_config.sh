@@ -24,7 +24,7 @@ python3 -m thesis_experiments.mpnn_exps \
     --substructures_config none \
     --embed_smarts_yes \
     --use_mvn_no \
-    --num_encoder_layers 4 \   
+    --num_encoder_layers 4 \
     --hidden_channels 145 
 
 python3 -m thesis_experiments.mpnn_exps \
