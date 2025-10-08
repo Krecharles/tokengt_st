@@ -242,10 +242,10 @@ def main():
         "d": 64,
         "num_encoder_layers": 4,
 
-        "epochs": 10,
+        "epochs": 100,
         "batch_size": 64,
         "lr": 0.001,
-        "num_workers": 16,
+        "num_workers": 4,
         "weight_decay": 0.0,
         "dropout": 0.0,
         "checkpointing": False,
@@ -260,10 +260,10 @@ def main():
     config = parse_arguments(config)
 
     wandb.init(
-        project=f"tgtp_{config['dataset']}",
+        project=f"nv_{config['dataset']}",
         entity="krecharles-university-of-oxford",
         config=config,
-        mode="disabled"
+        # mode="disabled"
     )
 
     train(config)

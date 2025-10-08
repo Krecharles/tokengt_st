@@ -9,9 +9,7 @@ import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
 
-from einops import rearrange, repeat
-
-from .performer_pytorch import FastAttention
+from einops import rearrange
 
 
 class MultiheadAttention(nn.Module):

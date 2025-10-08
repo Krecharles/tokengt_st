@@ -33,6 +33,8 @@ def get_data_module_and_sizes(config):
         data_module = ZincDataset(
             batch_size=config["batch_size"],
             num_workers=config["num_workers"],
+            d_p=config["D_P"],
+            node_id_mode=config["node_id_mode"],
         )
         num_atoms = 28
         num_edges = 5
@@ -180,10 +182,10 @@ def main():
         "d": 64,
         "num_encoder_layers": 4,
 
-        "epochs": 10,
+        "epochs": 100,
         "batch_size": 64,
         "lr": 0.001,
-        "num_workers": 16,
+        "num_workers": 4,
         "weight_decay": 0.0,
         "dropout": 0.0,
         "checkpointing": False,
@@ -197,7 +199,7 @@ def main():
     config = parse_arguments(config)
 
     wandb.init(
-        project=f"tgtp_{config['dataset']}",
+        project=f"nv_{config['dataset']}",
         entity="krecharles-university-of-oxford",
         config=config,
         mode="disabled"

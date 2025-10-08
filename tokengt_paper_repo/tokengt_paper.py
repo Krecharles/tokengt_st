@@ -106,7 +106,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             n_nodes = batch.ptr[i+1] - batch.ptr[i]
             edge_num = torch.bincount(batch.batch[batch.edge_index[0]], minlength=int(batch.batch.max()) + 1)
             n_edges = edge_num[i]
-            n_substructures = batch.n_substructure_instances[i]
+            n_substructures = 0
 
             row.append(n_nodes)
             row.append(n_edges)
@@ -149,7 +149,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         return loss
 
     def test_step(self, batch, batch_idx):
-        loss = self._common_step(batch, log_attention=batch_idx == 0)
+        loss = self._common_step(batch)
         self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.hparams["batch_size"])
         return loss
 

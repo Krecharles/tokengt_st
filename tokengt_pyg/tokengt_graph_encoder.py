@@ -7,7 +7,6 @@ from typing import Literal, Optional
 import torch
 import torch.nn as nn
 
-from .performer_pytorch import ProjectionUpdater
 from .multihead_attention import MultiheadAttention
 from .tokenizer import GraphFeatureTokenizer
 from .tokengt_graph_encoder_layer import TokenGTGraphEncoderLayer

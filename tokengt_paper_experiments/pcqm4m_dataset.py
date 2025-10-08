@@ -9,11 +9,8 @@ from ogb.utils import smiles2graph
 from ogb.lsc import PCQM4Mv2Evaluator
 from tokengt_paper_repo.pcqm4mv2_pyg import PygPCQM4Mv2Dataset
 from torch_geometric.data import Data
-from torch_geometric.transforms.add_positional_encoding import AddLaplacianEigenvectorPE
 
-from tokengt_paper_repo.wrapper import AddTokenGTPaperNodeIdentifiers
-from models.add_smarts_instances import AddSmartsInstances
-from models.add_substructure_embeddings import AddSubstructureEmbeddings
+from tokengt_pyg.add_laplacian_node_ids import ConvertToSingleEmbTransform
 
 def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
     """Returns `torch_geometric.data.Data` object from smiles while
@@ -57,14 +54,9 @@ class PCQM4MDataset(pl.LightningDataModule):
 
     def get_transforms(self) -> Compose:
         transforms = []
-        if self.add_pe:
-            transforms.append(AddLaplacianEigenvectorPE(k=self.d_p, attr_name='pe'))
-        if len(self.smarts_patterns) > 0:
-            transforms.append(AddSmartsInstances(self.smarts_patterns))
-            if self.embed_smarts:
-                transforms.append(AddSubstructureEmbeddings(len(self.smarts_patterns)))
-
-        transforms.append(AddTokenGTPaperNodeIdentifiers(self.d_p, convert_to_single_emb_offset=self.SINGLE_EMB_OFFSET))
+        transforms.append(ConvertToSingleEmbTransform(offset=self.SINGLE_EMB_OFFSET))
+        if self.node_id_mode == "laplacian":
+            transforms.append(AddLaplacianNodeIdentifiers(self.d_p))
 
         return Compose(transforms)
 

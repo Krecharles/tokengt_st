@@ -6,6 +6,7 @@ from typing import Optional
 
 from tokengt_experiments.model_analysis.motif_selection.zinc_smiles_dataset import ZincSmilesDataset
 from tokengt_paper_repo.wrapper import AddTokenGTPaperNodeIdentifiers
+from tokengt_pyg.add_laplacian_node_ids import AddLaplacianNodeIdentifiers
 
 class ZincDataset(pl.LightningDataModule):
     SINGLE_EMB_OFFSET = 28
@@ -29,7 +30,8 @@ class ZincDataset(pl.LightningDataModule):
 
     def get_transforms(self) -> Compose:
         transforms = []
-        transforms.append(AddTokenGTPaperNodeIdentifiers(self.d_p, convert_to_single_emb_offset=ZincDataset.SINGLE_EMB_OFFSET))
+        if self.node_id_mode == "laplacian":
+            transforms.append(AddLaplacianNodeIdentifiers(self.d_p))
 
         return Compose(transforms)
 
