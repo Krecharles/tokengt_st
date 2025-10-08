@@ -12,7 +12,8 @@ from torch_geometric.data import Data
 from torch_geometric.transforms.add_positional_encoding import AddLaplacianEigenvectorPE
 
 from tokengt_paper_repo.wrapper import AddTokenGTPaperNodeIdentifiers
-from models.add_smarts_instances import AddSubstructureEmbeddings, AddSmartsInstances
+from models.add_smarts_instances import AddSmartsInstances
+from models.add_substructure_embeddings import AddSubstructureEmbeddings
 
 def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
     """Returns `torch_geometric.data.Data` object from smiles while
