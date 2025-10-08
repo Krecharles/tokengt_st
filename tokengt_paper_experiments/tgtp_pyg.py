@@ -8,75 +8,31 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.model_summary import ModelSummary
 
 
-from models.add_smarts_instances import get_pcqm4m_xl_smarts_patterns, get_pcqm4m_smarts_patterns
-from tokengt_experiments.qm9.qm9_dataset import QM9Dataset
 from tokengt_paper_experiments.pcqm4m_dataset import PCQM4MDataset
 from tokengt_paper_experiments.zinc_dataset import ZincDataset
 from tokengt_paper_repo.tokengt_paper import TokenGTPaperGraphRegression
 
-def create_model(config, num_atoms, num_edges, n_substructures):
-    if config["architecture"] == "TokenGT_Paper":
-        return TokenGTPaperGraphRegression(
-            num_atoms=num_atoms,
-            num_edges=num_edges,
-            d_p=config["D_P"],
-            d=config["d"],
-            num_heads=config["num_heads"],
-            num_encoder_layers=config["num_encoder_layers"],
-            node_id_mode=config["node_id_mode"],
-            dropout=config["dropout"],
-            lr=config["lr"],
-            batch_size=config["batch_size"],
-            weight_decay=config["weight_decay"],
-            return_attention=True,
-            use_interaction_bias=config["use_interaction_bias"],
-            warmup_fraction=config["warmup_fraction"],
-            min_lr_ratio=config["min_lr_ratio"],
-        )
-    elif config["architecture"] == "TokenGT_Paper_Sum":
-        return TokenGTPaperGraphRegression(
-            num_atoms=num_atoms,
-            num_edges=num_edges,
-            d_p=config["D_P"],
-            d=config["d"],
-            num_heads=config["num_heads"],
-            num_encoder_layers=config["num_encoder_layers"],
-            node_id_mode=config["node_id_mode"],
-            dropout=config["dropout"],
-            lr=config["lr"],
-            batch_size=config["batch_size"],
-            weight_decay=config["weight_decay"],
-            substructure_mode="sum",
-            n_substructures=n_substructures,
-            return_attention=True,
-            use_interaction_bias=config["use_interaction_bias"],
-            warmup_fraction=config["warmup_fraction"],
-            min_lr_ratio=config["min_lr_ratio"],
-        )
-    else:
-        raise ValueError(f"Unknown architecture: {config['architecture']}")
+def create_model(config, num_atoms, num_edges):
+    return TokenGTPaperGraphRegression(
+        num_atoms=num_atoms,
+        num_edges=num_edges,
+        d_p=config["D_P"],
+        d=config["d"],
+        num_heads=config["num_heads"],
+        num_encoder_layers=config["num_encoder_layers"],
+        node_id_mode=config["node_id_mode"],
+        dropout=config["dropout"],
+        lr=config["lr"],
+        batch_size=config["batch_size"],
+        weight_decay=config["weight_decay"],
+        return_attention=True,
+    )
 
-
-def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
-    if config["dataset"] == "QM9":
-        data_module = QM9Dataset(
-            batch_size=config["batch_size"],
-            num_workers=config["num_workers"],
-            d_p=config["D_P"],
-            node_id_mode=config["node_id_mode"],
-            smarts_patterns=smarts_patterns,
-            embed_smarts=config["embed_smarts"],
-            target_idx=config["target_idx"],
-        )
-        node_dim = 9 + n_substructures if config["embed_smarts"] else 9
-        num_atoms = QM9Dataset.SINGLE_EMB_OFFSET * node_dim
-        num_edges = 5 * QM9Dataset.SINGLE_EMB_OFFSET
-    elif config["dataset"] == "ZINC":
+def get_data_module_and_sizes(config):
+    if config["dataset"] == "ZINC":
         data_module = ZincDataset(
             batch_size=config["batch_size"],
             num_workers=config["num_workers"],
-            d_p=config["D_P"],
-            node_id_mode=config["node_id_mode"],
         )
         num_atoms = 28
         num_edges = 5
@@ -86,13 +42,10 @@ def get_data_module_and_sizes(config, smarts_patterns, n_substructures):
             num_workers=config["num_workers"],
             d_p=config["D_P"],
             node_id_mode=config["node_id_mode"],
-            smarts_patterns=smarts_patterns,
-            embed_smarts=config["embed_smarts"],
             dataset_fraction=config["dataset_fraction"],
             prefetch_factor=config["prefetch_factor"],
         )
-        node_dim = 9 + n_substructures if config["embed_smarts"] else 9
-        num_atoms = PCQM4MDataset.SINGLE_EMB_OFFSET * node_dim
+        num_atoms = PCQM4MDataset.SINGLE_EMB_OFFSET * 9
         num_edges = 4 * PCQM4MDataset.SINGLE_EMB_OFFSET
     else:
         raise ValueError(f"Unknown dataset: {config['dataset']}")
@@ -114,17 +67,11 @@ def load_checkpoint_path(model_name):
 def parse_arguments(config):
     parser = argparse.ArgumentParser(description='TokenGT Paper Experiments')
 
-    parser.add_argument('--architecture', type=str, choices=['TokenGT_Paper', 'TokenGT_Paper_Sum'],
+    parser.add_argument('--architecture', type=str, choices=['TokenGT_Paper'],
                         help='Model architecture')
-    parser.add_argument('--dataset', type=str, choices=['ZINC', 'QM9', 'PCQM4M'],
+    parser.add_argument('--dataset', type=str, choices=['ZINC', 'PCQM4M'],
                         help='Dataset to use')
-    parser.add_argument('--target_idx', type=int,
-                        help='Target index for QM9 dataset')
 
-    parser.add_argument('--embed_smarts_yes',
-                        action='store_true', help='Enable SMARTS embedding')
-    parser.add_argument('--embed_smarts_no',
-                        action='store_true', help='Disable SMARTS embedding')
     parser.add_argument('--checkpointing_yes',
                         action='store_true', help='Enable checkpointing')
     parser.add_argument('--checkpointing_no',
@@ -168,16 +115,11 @@ def train(config):
 
     pl.seed_everything(config["seed"], workers=True)
 
-    smarts_patterns = get_pcqm4m_smarts_patterns()
-    # smarts_patterns = []
-    n_substructures = len(smarts_patterns)
-
-    data_module, num_atoms, num_edges = get_data_module_and_sizes(
-        config, smarts_patterns, n_substructures)
+    data_module, num_atoms, num_edges = get_data_module_and_sizes(config)
 
     wandb_logger = WandbLogger()
 
-    model = create_model(config, num_atoms, num_edges, n_substructures)
+    model = create_model(config, num_atoms, num_edges)
     summary = ModelSummary(model, max_depth=3)
     print(summary)
   
@@ -230,12 +172,8 @@ def train(config):
 def main():
 
     config = {
-        "architecture": ["TokenGT_Paper", "TokenGT_Paper_Sum"][0],
-        "dataset": ["ZINC", "QM9", "PCQM4M"][0],
-        "target_idx": 2,  # HOMO
-        # Whether to add the smarts patterns to the node features (and one-hot encode the group index)
-        "embed_smarts": False,
-
+        "architecture": ["TokenGT_Paper"][0],
+        "dataset": ["ZINC", "PCQM4M"][0],
         "node_id_mode": ["orf", "laplacian"][1],
         "D_P": 16,
         "num_heads": 8,
@@ -250,8 +188,7 @@ def main():
         "dropout": 0.0,
         "checkpointing": False,
         "seed": 1,
-        "use_interaction_bias": False,
-        "dataset_fraction": 0.05,
+        "dataset_fraction": 1,
         "warmup_fraction": 0.1,
         "min_lr_ratio": 0.05,
         "prefetch_factor": 2,

@@ -8,9 +8,7 @@ import torch
 import torch.nn as nn
 
 from .multihead_attention import MultiheadAttention
-from .multihead_performer_attention import MultiheadPerformerAttention
 from .feedforward import FeedForward
-from .droppath import DropPath
 
 
 class TokenGTGraphEncoderLayer(nn.Module):
@@ -24,13 +22,7 @@ class TokenGTGraphEncoderLayer(nn.Module):
             attention_dropout: float = 0.1,
             activation_dropout: float = 0.1,
             drop_path: float = 0.0,
-            performer: bool = False,
-            performer_nb_features: int = None,
-            performer_generalized_attention: bool = False,
             activation_fn: str = "relu",
-            export: bool = False,
-            q_noise: float = 0.0,
-            qn_block_size: int = 8,
             init_fn: Callable = None,
             layernorm_style: str = "postnorm",
             return_attention: bool = False,
@@ -46,38 +38,26 @@ class TokenGTGraphEncoderLayer(nn.Module):
         self.encoder_layers = encoder_layers
         self.num_attention_heads = num_attention_heads
         self.attention_dropout = attention_dropout
-        self.q_noise = q_noise
-        self.qn_block_size = qn_block_size
         self.layernorm_style = layernorm_style
         self.return_attention = return_attention
 
         self.dropout_module = nn.Dropout(dropout)
 
         # Initialize blocks
-        self.self_attn = self.build_self_attention(
-            self.embedding_dim,
-            num_attention_heads,
-            performer=performer,
-            performer_nb_features=performer_nb_features,
-            performer_generalized_attention=performer_generalized_attention,
+        self.self_attn = MultiheadAttention(
+            embed_dim=embedding_dim,
+            num_attention_heads=num_attention_heads,
             attention_dropout=attention_dropout,
             dropout=dropout,
             self_attention=True,
-            q_noise=q_noise,
-            qn_block_size=qn_block_size
-        )
+            )
 
         # layer norm associated with the self attention layer
         self.self_attn_layer_norm = nn.LayerNorm(self.embedding_dim)
 
-        # drop path for stochastic depth
-        self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-
         self.feedforward = self.build_FFN(
             self.embedding_dim,
             ffn_embedding_dim,
-            q_noise,
-            qn_block_size,
             activation_fn,
             activation_dropout,
             dropout,
@@ -87,15 +67,10 @@ class TokenGTGraphEncoderLayer(nn.Module):
         # layer norm associated with the position wise feed-forward NN
         self.final_layer_norm = nn.LayerNorm(self.embedding_dim)
 
-        # drop path for stochastic depth
-        self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-
     def build_FFN(
             self,
             embedding_dim,
             ffn_embedding_dim,
-            q_noise,
-            qn_block_size,
             activation_fn,
             activation_dropout,
             dropout,
@@ -104,57 +79,15 @@ class TokenGTGraphEncoderLayer(nn.Module):
         return FeedForward(
             embedding_dim=embedding_dim,
             ffn_embedding_dim=ffn_embedding_dim,
-            q_noise=q_noise,
-            qn_block_size=qn_block_size,
             activation_fn=activation_fn,
             activation_dropout=activation_dropout,
             dropout=dropout,
             module_name=module_name,
         )
 
-    def build_self_attention(
-            self,
-            embed_dim,
-            num_attention_heads,
-            performer,
-            performer_nb_features,
-            performer_generalized_attention,
-            attention_dropout,
-            dropout,
-            self_attention,
-            q_noise,
-            qn_block_size
-    ):
-        if performer:
-            return MultiheadPerformerAttention(
-                embed_dim,
-                num_attention_heads,
-                performer_nb_features=performer_nb_features,
-                performer_generalized_attention=performer_generalized_attention,
-                attention_dropout=attention_dropout,
-                dropout=dropout,
-                self_attention=True,
-                q_noise=q_noise,
-                qn_block_size=qn_block_size,
-            )
-        else:
-            return MultiheadAttention(
-                embed_dim,
-                num_attention_heads,
-                attention_dropout=attention_dropout,
-                dropout=dropout,
-                self_attention=True,
-                q_noise=q_noise,
-                qn_block_size=qn_block_size
-            )
-
-    def performer_finetune_setup(self, performer_nb_features, performer_generalized_attention):
-        self.self_attn.performer_finetune_setup(performer_nb_features, performer_generalized_attention)
-
     def forward(
             self,
             x: torch.Tensor,
-            self_attn_bias: Optional[torch.Tensor] = None,
             self_attn_mask: Optional[torch.Tensor] = None,
             self_attn_padding_mask: Optional[torch.Tensor] = None,
     ):
@@ -170,7 +103,6 @@ class TokenGTGraphEncoderLayer(nn.Module):
                 query=x,
                 key=x,
                 value=x,
-                attn_bias=self_attn_bias,
                 key_padding_mask=self_attn_padding_mask,
                 need_weights=self.return_attention,
                 need_head_weights=self.return_attention,
@@ -192,7 +124,6 @@ class TokenGTGraphEncoderLayer(nn.Module):
                 query=x,
                 key=x,
                 value=x,
-                attn_bias=self_attn_bias,
                 key_padding_mask=self_attn_padding_mask,
                 need_weights=self.return_attention,
                 need_head_weights=self.return_attention,
