@@ -50,13 +50,6 @@ class TokenGTGraphEncoder(nn.Module):
 
             stochastic_depth: bool = False,
 
-            performer: bool = False,
-            performer_finetune: bool = False,
-            performer_nb_features: int = None,
-            performer_feature_redraw_interval: int = 1000,
-            performer_generalized_attention: bool = False,
-            performer_auto_check_redraw: bool = True,
-
             num_encoder_layers: int = 12,
             embedding_dim: int = 768,
             ffn_embedding_dim: int = 768,
@@ -72,10 +65,7 @@ class TokenGTGraphEncoder(nn.Module):
             embed_scale: float = None,
             freeze_embeddings: bool = False,
             n_trans_layers_to_freeze: int = 0,
-            export: bool = False,
             traceable: bool = False,
-            q_noise: float = 0.0,
-            qn_block_size: int = 8,
 
             return_attention: bool = False,
 
@@ -87,8 +77,6 @@ class TokenGTGraphEncoder(nn.Module):
         self.embedding_dim = embedding_dim
         self.apply_graphormer_init = apply_graphormer_init
         self.traceable = traceable
-        self.performer = performer
-        self.performer_finetune = performer_finetune
 
         self.graph_feature = GraphFeatureTokenizer(
             num_atoms=num_atoms,
@@ -98,13 +86,12 @@ class TokenGTGraphEncoder(nn.Module):
             hidden_dim=embedding_dim,
             num_encoder_layers=num_encoder_layers,
             dim_feedforward=ffn_embedding_dim,
+            lap_node_id_sign_flip=lap_node_id_sign_flip,
             lap_node_id_eig_dropout=lap_node_id_eig_dropout,
         )
         
-        self.performer_finetune = performer_finetune    
         self.embed_scale = embed_scale
 
-        assert q_noise == 0, "Quantization noise is not implemented yet."
         self.quant_noise = None
 
         if encoder_normalize_before:
@@ -123,22 +110,6 @@ class TokenGTGraphEncoder(nn.Module):
         if stochastic_depth:
             assert layernorm_style == 'prenorm'  # only for residual nets
 
-        self.cached_performer_options = None
-        if self.performer_finetune:
-            assert self.performer
-            self.cached_performer_options = (
-                performer_nb_features,
-                performer_generalized_attention,
-                performer_auto_check_redraw,
-                performer_feature_redraw_interval
-            )
-            self.performer = False
-            performer = False
-            performer_nb_features = None
-            performer_generalized_attention = False
-            performer_auto_check_redraw = False
-            performer_feature_redraw_interval = None
-
         self.layers.extend(
             [
                 self.build_tokengt_graph_encoder_layer(
@@ -150,13 +121,7 @@ class TokenGTGraphEncoder(nn.Module):
                     attention_dropout=attention_dropout,
                     activation_dropout=activation_dropout,
                     drop_path=(0.1 * (layer_idx + 1) / num_encoder_layers) if stochastic_depth else 0,
-                    performer=performer,
-                    performer_nb_features=performer_nb_features,
-                    performer_generalized_attention=performer_generalized_attention,
                     activation_fn=activation_fn,
-                    export=export,
-                    q_noise=q_noise,
-                    qn_block_size=qn_block_size,
                     layernorm_style=layernorm_style,
                     return_attention=return_attention,
                 )
@@ -179,30 +144,6 @@ class TokenGTGraphEncoder(nn.Module):
         for layer in range(n_trans_layers_to_freeze):
             freeze_module_params(self.layers[layer])
 
-        if performer:
-            # keeping track of when to redraw projections for all attention layers
-            self.performer_auto_check_redraw = performer_auto_check_redraw
-            self.performer_proj_updater = ProjectionUpdater(self.layers, performer_feature_redraw_interval)
-        
-    def performer_fix_projection_matrices_(self):
-        self.performer_proj_updater.feature_redraw_interval = None
-
-    def performer_finetune_setup(self):
-        assert self.performer_finetune
-        (
-            performer_nb_features,
-            performer_generalized_attention,
-            performer_auto_check_redraw,
-            performer_feature_redraw_interval
-        ) = self.cached_performer_options
-
-        for layer in self.layers:
-            layer.performer_finetune_setup(performer_nb_features, performer_generalized_attention)
-
-        self.performer = True
-        self.performer_auto_check_redraw = performer_auto_check_redraw
-        self.performer_proj_updater = ProjectionUpdater(self.layers, performer_feature_redraw_interval)
-
     def build_tokengt_graph_encoder_layer(
             self,
             embedding_dim,
@@ -213,13 +154,7 @@ class TokenGTGraphEncoder(nn.Module):
             attention_dropout,
             activation_dropout,
             drop_path,
-            performer,
-            performer_nb_features,
-            performer_generalized_attention,
             activation_fn,
-            export,
-            q_noise,
-            qn_block_size,
             layernorm_style,
             return_attention,
     ):
@@ -232,13 +167,7 @@ class TokenGTGraphEncoder(nn.Module):
             attention_dropout=attention_dropout,
             activation_dropout=activation_dropout,
             drop_path=drop_path,
-            performer=performer,
-            performer_nb_features=performer_nb_features,
-            performer_generalized_attention=performer_generalized_attention,
             activation_fn=activation_fn,
-            export=export,
-            q_noise=q_noise,
-            qn_block_size=qn_block_size,
             layernorm_style=layernorm_style,
             return_attention=return_attention
         )
@@ -252,9 +181,6 @@ class TokenGTGraphEncoder(nn.Module):
             attn_mask: Optional[torch.Tensor] = None,
     ):
         is_tpu = False
-
-        if self.performer and self.performer_auto_check_redraw:
-            self.performer_proj_updater.redraw_projections()
 
         if token_embeddings is not None:
             raise NotImplementedError

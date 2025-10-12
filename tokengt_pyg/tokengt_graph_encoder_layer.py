@@ -46,7 +46,7 @@ class TokenGTGraphEncoderLayer(nn.Module):
         # Initialize blocks
         self.self_attn = MultiheadAttention(
             embed_dim=embedding_dim,
-            num_attention_heads=num_attention_heads,
+            num_heads=num_attention_heads,
             attention_dropout=attention_dropout,
             dropout=dropout,
             self_attention=True,
@@ -90,6 +90,7 @@ class TokenGTGraphEncoderLayer(nn.Module):
             x: torch.Tensor,
             self_attn_mask: Optional[torch.Tensor] = None,
             self_attn_padding_mask: Optional[torch.Tensor] = None,
+            self_attn_bias: Optional[torch.Tensor] = None,
     ):
         """
         LayerNorm is applied either before or after the self-attention/ffn
@@ -128,6 +129,7 @@ class TokenGTGraphEncoderLayer(nn.Module):
                 need_weights=self.return_attention,
                 need_head_weights=self.return_attention,
                 attn_mask=self_attn_mask,
+                attn_bias=self_attn_bias,
             )
             x = self.dropout_module(x)
             x = residual + x

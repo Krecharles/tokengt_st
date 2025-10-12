@@ -35,11 +35,6 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             # >
             # <
             stochastic_depth=False,
-            performer=False,
-            performer_finetune=False,
-            performer_nb_features=None,
-            performer_feature_redraw_interval=1000,
-            performer_generalized_attention=False,
 
             num_encoder_layers=num_encoder_layers,
             embedding_dim=d,
@@ -86,6 +81,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams["lr"], weight_decay=self.hparams["weight_decay"])
+        return optimizer
 
         total_steps = self.trainer.estimated_stepping_batches
         warmup_steps = max(1, int(self.hparams["warmup_fraction"] * total_steps))

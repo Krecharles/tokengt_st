@@ -31,6 +31,7 @@ class GraphFeatureTokenizer(nn.Module):
             hidden_dim: int,
             dim_feedforward: int,
             num_encoder_layers: int,
+            lap_node_id_sign_flip: bool = False,
             lap_node_id_eig_dropout: float = 0.0,
     ):
         super(GraphFeatureTokenizer, self).__init__()
@@ -45,6 +46,7 @@ class GraphFeatureTokenizer(nn.Module):
         self.node_id_mode = node_id_mode
         self.d_p = d_p
         self.hidden_dim = hidden_dim
+        self.lap_node_id_sign_flip = lap_node_id_sign_flip
 
         if node_id_mode == "laplacian":
             self.lap_encoder = nn.Linear(2 * d_p, hidden_dim, bias=False)
@@ -52,6 +54,8 @@ class GraphFeatureTokenizer(nn.Module):
 
         if node_id_mode == "orf":
             self.orf_encoder = nn.Linear(2 * d_p, hidden_dim, bias=False)
+        
+        self.order_encoder = nn.Embedding(2, hidden_dim)
 
         self.apply(lambda module: init_params(module, num_encoder_layers=num_encoder_layers))
 

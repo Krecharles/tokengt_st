@@ -10,7 +10,7 @@ from pytorch_lightning.utilities.model_summary import ModelSummary
 
 from tokengt_paper_experiments.pcqm4m_dataset import PCQM4MDataset
 from tokengt_paper_experiments.zinc_dataset import ZincDataset
-from tokengt_paper_repo.tokengt_paper import TokenGTPaperGraphRegression
+from tokengt_pyg.tokengt_paper import TokenGTPaperGraphRegression
 
 def create_model(config, num_atoms, num_edges):
     return TokenGTPaperGraphRegression(
@@ -25,7 +25,6 @@ def create_model(config, num_atoms, num_edges):
         lr=config["lr"],
         batch_size=config["batch_size"],
         weight_decay=config["weight_decay"],
-        return_attention=True,
     )
 
 def get_data_module_and_sizes(config):
@@ -156,7 +155,7 @@ def train(config):
         gradient_clip_val=5.0,
         default_root_dir=f"./",
         callbacks=[checkpoint_callback] if config["checkpointing"] else None,
-        # val_check_interval=0.2,
+        val_check_interval=0.2,
         # check_val_every_n_epoch=2,
         # fast_dev_run=True,
     )
@@ -175,34 +174,33 @@ def main():
 
     config = {
         "architecture": ["TokenGT_Paper"][0],
-        "dataset": ["ZINC", "PCQM4M"][0],
+        "dataset": ["ZINC", "PCQM4M"][1],
         "node_id_mode": ["orf", "laplacian"][1],
-        "D_P": 16,
-        "num_heads": 8,
-        "d": 64,
-        "num_encoder_layers": 4,
+        "D_P": 64,
+        "num_heads": 32,
+        "d": 768,
+        "num_encoder_layers": 12,
 
-        "epochs": 100,
-        "batch_size": 64,
-        "lr": 0.001,
+        "epochs": 50,
+        "batch_size": 400,
+        "lr": 0.0002,
         "num_workers": 4,
-        "weight_decay": 0.0,
-        "dropout": 0.0,
+        "weight_decay": 0.1, # same in paper
+        "dropout": 0.1,
         "checkpointing": False,
-        "seed": 1,
+        "seed": 2,
         "dataset_fraction": 1,
-        "warmup_fraction": 0.1,
+        "warmup_fraction": 0.01,
         "min_lr_ratio": 0.05,
         "prefetch_factor": 2,
     }
-
     config = parse_arguments(config)
 
     wandb.init(
         project=f"nv_{config['dataset']}",
         entity="krecharles-university-of-oxford",
         config=config,
-        mode="disabled"
+        # mode="disabled"
     )
 
     train(config)

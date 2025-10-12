@@ -8,8 +8,6 @@ class FeedForward(nn.Module):
             self,
             embedding_dim,
             ffn_embedding_dim,
-            q_noise,
-            qn_block_size,
             activation_fn,
             activation_dropout,
             dropout,

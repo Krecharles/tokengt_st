@@ -37,9 +37,9 @@ class ZincDataset(pl.LightningDataModule):
 
 
     def setup(self, stage: Optional[str] = None):
-        self.train = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="train")
-        self.val = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="val")
-        self.test = ZincSmilesDataset(root=self.root_f, subset=True, pre_transform=self.transform, split="test")
+        self.train = ZincSmilesDataset(root=self.root_f, subset=True, transform=self.transform, split="train")
+        self.val = ZincSmilesDataset(root=self.root_f, subset=True, transform=self.transform, split="val")
+        self.test = ZincSmilesDataset(root=self.root_f, subset=True, transform=self.transform, split="test")
 
     def train_dataloader(self):
         return DataLoader(
