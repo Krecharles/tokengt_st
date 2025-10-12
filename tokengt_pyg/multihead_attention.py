@@ -152,8 +152,7 @@ class MultiheadAttention(nn.Module):
         assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
 
         if attn_bias is not None:
-            # attn_weights += attn_bias.view(bsz * self.num_heads, tgt_len, src_len)
-            attn_weights += attn_bias.repeat_interleave(self.num_heads, dim=0)
+            attn_weights += attn_bias.view(bsz * self.num_heads, tgt_len, src_len)
 
         if attn_mask is not None:
             attn_mask = attn_mask.unsqueeze(0)

@@ -199,12 +199,12 @@ class GraphFeatureTokenizer(nn.Module):
             edge_index,
             edge_data,
         ) = (
-            batched_data["node_data"],
+            batched_data["x"],
             batched_data["batch"],
             batched_data["ptr"],
             batched_data["lap_eigvec"],
             batched_data["edge_index"],
-            batched_data["edge_data"],
+            batched_data["edge_attr"],
         )
 
         node_num = ptr[1:] - ptr[:-1]

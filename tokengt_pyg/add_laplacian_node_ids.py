@@ -8,6 +8,8 @@ import torch
 from torch_geometric.utils._to_dense_adj import to_dense_adj
 from torch_geometric.utils.laplacian import get_laplacian
 
+from tokengt_pyg import algos
+
 
 @functional_transform("add_laplacian_node_identifiers_pyg")
 class AddLaplacianNodeIdentifiers(BaseTransform):
@@ -31,16 +33,20 @@ class AddLaplacianNodeIdentifiers(BaseTransform):
         assert data.num_nodes is not None
         assert data.edge_index is not None
 
-        n = data.num_nodes
-        node_ids = self._get_lap_eigenvectors(data.edge_index, n)
+        N = data.num_nodes
+        dense_adj = torch.zeros([N, N], dtype=torch.bool)
+        dense_adj[data.edge_index[0, :], data.edge_index[1, :]] = True
+        in_degree = dense_adj.long().sum(dim=1).view(-1)
+        lap_eigvec, lap_eigval = algos.lap_eig(dense_adj, N, in_degree)  # [N, N], [N,]
+        lap_eigval = lap_eigval[None, :].expand_as(lap_eigvec)
 
-        if n < self._d_p:
-            node_ids = F.pad(node_ids, (0, self._d_p - n), value=0.0)
+        lap_dim = lap_eigvec.size(-1)
+        if self._d_p > lap_dim:
+            lap_eigvec = F.pad(lap_eigvec, (0, self._d_p - lap_dim), value=float('0'))  # [sum(n_node), Dl]
         else:
-            node_ids = node_ids[:, :self._d_p]
-        node_ids = F.normalize(node_ids, p=2, dim=1)
+            lap_eigvec = lap_eigvec[:, :self._d_p]  # [sum(n_node), Dl]
 
-        data["node_ids"] = node_ids
+        data["lap_eigvec"] = lap_eigvec
         return data
 
     @staticmethod

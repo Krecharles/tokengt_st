@@ -10,7 +10,7 @@ from ogb.lsc import PCQM4Mv2Evaluator
 from tokengt_paper_repo.pcqm4mv2_pyg import PygPCQM4Mv2Dataset
 from torch_geometric.data import Data
 
-from tokengt_pyg.add_laplacian_node_ids import ConvertToSingleEmbTransform
+from tokengt_pyg.add_laplacian_node_ids import AddLaplacianNodeIdentifiers, ConvertToSingleEmbTransform
 
 def ogb_from_smiles_wrapper(smiles, *args, **kwargs):
     """Returns `torch_geometric.data.Data` object from smiles while
