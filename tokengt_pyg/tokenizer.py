@@ -48,26 +48,22 @@ class GraphFeatureTokenizer(nn.Module):
         self.hidden_dim = hidden_dim
         self.lap_node_id_sign_flip = lap_node_id_sign_flip
 
-        if node_id_mode == "laplacian":
-            self.lap_encoder = nn.Linear(2 * d_p, hidden_dim, bias=False)
-            self.lap_eig_dropout = nn.Dropout2d(p=lap_node_id_eig_dropout) if lap_node_id_eig_dropout > 0 else None
-
-        if node_id_mode == "orf":
-            self.orf_encoder = nn.Linear(2 * d_p, hidden_dim, bias=False)
-        
+        self.node_id_encoder = nn.Linear(2 * d_p, hidden_dim, bias=False)
         self.order_encoder = nn.Embedding(2, hidden_dim)
 
+        if node_id_mode == "laplacian":
+            self.lap_eig_dropout = nn.Dropout2d(p=lap_node_id_eig_dropout) if lap_node_id_eig_dropout > 0 else None
+        
         self.apply(lambda module: init_params(module, num_encoder_layers=num_encoder_layers))
 
     @staticmethod
-    def get_batch(node_feature, edge_index, edge_feature, node_num, edge_num, perturb=None):
+    def get_batch(node_feature, edge_index, edge_feature, node_num, edge_num):
         """
         :param node_feature: Tensor([sum(node_num), D])
         :param edge_index: LongTensor([2, sum(edge_num)])
         :param edge_feature: Tensor([sum(edge_num), D])
         :param node_num: list
         :param edge_num: list
-        :param perturb: Tensor([B, max(node_num), D])
         :return: padded_index: LongTensor([B, T, 2]), padded_feature: Tensor([B, T, D]), padding_mask: BoolTensor([B, T])
         """
         seq_len = [n + e for n, e in zip(node_num, edge_num)]
@@ -96,10 +92,6 @@ class GraphFeatureTokenizer(nn.Module):
         padded_index = torch.zeros(b, max_len, 2, device=device, dtype=torch.long)  # [B, T, 2]
         padded_index[padded_node_mask, :] = node_index.t()
         padded_index[padded_edge_mask, :] = edge_index.t()
-
-        if perturb is not None:
-            perturb_mask = padded_node_mask[:, :max_n]  # [B, max_n]
-            node_feature = node_feature + perturb[perturb_mask].type(node_feature.dtype)  # [sum(node_num), D]
 
         padded_feature = torch.zeros(b, max_len, d, device=device, dtype=node_feature.dtype)  # [B, T, D]
         padded_feature[padded_node_mask, :] = node_feature
@@ -178,7 +170,7 @@ class GraphFeatureTokenizer(nn.Module):
         order_embed = self.order_encoder(order)
         return order_embed
 
-    def add_special_tokens(self, padded_feature, padding_mask):
+    def add_graph_token(self, padded_feature, padding_mask):
         """
         :param padded_feature: Tensor([B, T, D])
         :param padding_mask: BoolTensor([B, T])
@@ -186,15 +178,14 @@ class GraphFeatureTokenizer(nn.Module):
         """
         b, _, d = padded_feature.size()
 
-        num_special_tokens = 1
         graph_token_feature = self.graph_token.weight.expand(b, 1, d)  # [1, D]
-        special_token_mask = torch.zeros(b, num_special_tokens, dtype=torch.bool, device=padded_feature.device)
+        special_token_mask = torch.zeros(b, 1, dtype=torch.bool, device=padded_feature.device)
 
         padded_feature = torch.cat((graph_token_feature, padded_feature), dim=1)  # [B, 1 + T, D]
         padding_mask = torch.cat((special_token_mask, padding_mask), dim=1)  # [B, 1 + T]
         return padded_feature, padding_mask
 
-    def forward(self, batched_data, perturb=None):
+    def forward(self, batched_data):
         (
             node_data,
             batch,
@@ -214,7 +205,7 @@ class GraphFeatureTokenizer(nn.Module):
         node_num = ptr[1:] - ptr[:-1]
         edge_num = torch.bincount(batch[edge_index[0]], minlength=int(batch.max()) + 1)
 
-        # remove batchting offsets from edge_index
+        # remove batching offsets from edge_index
         edge_index = edge_index - torch.repeat_interleave(ptr[:-1], edge_num).unsqueeze(0)
 
 
@@ -224,7 +215,7 @@ class GraphFeatureTokenizer(nn.Module):
         dtype = node_feature.dtype
 
         padded_index, padded_feature, padding_mask, _, _ = self.get_batch(
-            node_feature, edge_index, edge_feature, node_num, edge_num, perturb
+            node_feature, edge_index, edge_feature, node_num, edge_num
         )
         node_mask = self.get_node_mask(node_num, node_feature.device)  # [B, max(n_node)]
 
@@ -240,25 +231,19 @@ class GraphFeatureTokenizer(nn.Module):
                 orf_node_id = orf_node_id[..., :self.orf_node_id_dim]  # [sum(n_node), Do]
             orf_node_id = F.normalize(orf_node_id, p=2, dim=1)
             orf_index_embed = self.get_index_embed(orf_node_id, node_mask, padded_index)  # [B, T, 2Do]
-            padded_feature = padded_feature + self.orf_encoder(orf_index_embed)
+            padded_feature = padded_feature + self.node_id_encoder(orf_index_embed)
 
         if self.node_id_mode == "laplacian":
-            # TODO potential problem
-            # lap_dim = lap_eigvec.size(-1)
-            # if self.lap_node_id_k > lap_dim:
-            #     eigvec = F.pad(lap_eigvec, (0, self.lap_node_id_k - lap_dim), value=float('0'))  # [sum(n_node), Dl]
-            # else:
-            #     eigvec = lap_eigvec[:, :self.lap_node_id_k]  # [sum(n_node), Dl]
             if self.lap_eig_dropout is not None:
                 eigvec = self.lap_eig_dropout(eigvec[..., None, None]).view(eigvec.size())
             lap_node_id = self.handle_eigvec(eigvec, node_mask, self.lap_node_id_sign_flip)
             lap_index_embed = self.get_index_embed(lap_node_id, node_mask, padded_index)  # [B, T, 2Dl]
-            padded_feature = padded_feature + self.lap_encoder(lap_index_embed)
+            padded_feature = padded_feature + self.node_id_encoder(lap_index_embed)
 
 
         padded_feature = padded_feature + self.get_type_embed(padded_index)
 
-        padded_feature, padding_mask = self.add_special_tokens(padded_feature, padding_mask)  # [B, 2+T, D], [B, 2+T]
+        padded_feature, padding_mask = self.add_graph_token(padded_feature, padding_mask)  # [B, 1+T, D], [B, 1+T]
 
         padded_feature = padded_feature.masked_fill(padding_mask[..., None], float('0'))
-        return padded_feature, padding_mask, padded_index  # [B, 2+T, D], [B, 2+T], [B, T, 2]
+        return padded_feature, padding_mask, padded_index  # [B, 1+T, D], [B, 1+T], [B, T, 2]

@@ -94,18 +94,18 @@ class TokenGTGraphEncoder(nn.Module):
 
         self.layers.extend(
             [
-                self.build_tokengt_graph_encoder_layer(
-                    embedding_dim=self.embedding_dim,
+                TokenGTGraphEncoderLayer(
+                    embedding_dim=embedding_dim,
                     ffn_embedding_dim=ffn_embedding_dim,
                     num_attention_heads=num_attention_heads,
-                    dropout=self.dropout_module.p,
+                    dropout=dropout,
                     attention_dropout=attention_dropout,
                     activation_dropout=activation_dropout,
                     activation_fn=activation_fn,
                     layernorm_style=layernorm_style,
-                    return_attention=return_attention,
+                    return_attention=return_attention
                 )
-                for layer_idx in range(num_encoder_layers)
+                for _ in range(num_encoder_layers)
             ]
         )
 
@@ -113,42 +113,11 @@ class TokenGTGraphEncoder(nn.Module):
         if self.apply_graphormer_init:
             self.apply(init_graphormer_params)
 
-    def build_tokengt_graph_encoder_layer(
-            self,
-            embedding_dim,
-            ffn_embedding_dim,
-            num_attention_heads,
-            dropout,
-            attention_dropout,
-            activation_dropout,
-            activation_fn,
-            layernorm_style,
-            return_attention,
-    ):
-        return TokenGTGraphEncoderLayer(
-            embedding_dim=embedding_dim,
-            ffn_embedding_dim=ffn_embedding_dim,
-            num_attention_heads=num_attention_heads,
-            dropout=dropout,
-            attention_dropout=attention_dropout,
-            activation_dropout=activation_dropout,
-            activation_fn=activation_fn,
-            layernorm_style=layernorm_style,
-            return_attention=return_attention
-        )
-
     def forward(
             self,
             batched_data,
-            perturb=None,
-            last_state_only: bool = False,
-            token_embeddings: Optional[torch.Tensor] = None,
-            attn_mask: Optional[torch.Tensor] = None,
     ):
-        if token_embeddings is not None:
-            raise NotImplementedError
-        else:
-            x, padding_mask, padded_index = self.graph_feature(batched_data, perturb)
+        x, padding_mask, padded_index = self.graph_feature(batched_data)
 
         # x: B x T x C
 
@@ -157,30 +126,15 @@ class TokenGTGraphEncoder(nn.Module):
 
         x = self.dropout_module(x)
 
-        # account for padding while computing the representation
-
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
-
-        inner_states = []
-        if not last_state_only:
-            inner_states.append(x)
-
-        if attn_mask is not None:
-            raise NotImplementedError
-
 
         attn_dict = {'maps': {}, 'padded_index': padded_index}
         for i in range(len(self.layers)):
             layer = self.layers[i]
-            x, attn = layer(x, self_attn_padding_mask=padding_mask, self_attn_mask=attn_mask)
-            if not last_state_only:
-                inner_states.append(x)
+            x, attn = layer(x, self_attn_padding_mask=padding_mask)
             attn_dict['maps'][i] = attn
 
         graph_rep = x[0, :, :]
 
-        if last_state_only:
-            inner_states = [x]
-
-        return inner_states, graph_rep, attn_dict
+        return x, graph_rep, attn_dict

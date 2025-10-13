@@ -104,7 +104,6 @@ class TokenGTGraphEncoderLayer(nn.Module):
                 key_padding_mask=self_attn_padding_mask,
                 need_weights=self.return_attention,
                 need_head_weights=self.return_attention,
-                attn_mask=self_attn_mask,
             )
             x = self.dropout_module(x)
             x = residual + x
@@ -123,7 +122,6 @@ class TokenGTGraphEncoderLayer(nn.Module):
                 key_padding_mask=self_attn_padding_mask,
                 need_weights=self.return_attention,
                 need_head_weights=self.return_attention,
-                attn_mask=self_attn_mask,
                 attn_bias=self_attn_bias,
             )
             x = self.dropout_module(x)
