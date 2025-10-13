@@ -55,7 +55,8 @@ class TokenGTGraphEncoder(nn.Module):
             dropout: float = 0.1,
             attention_dropout: float = 0.1,
             activation_dropout: float = 0.1,
-            norm_first: bool = True,
+            encoder_normalize_before: bool = True,
+            norm_first: bool = False,
             apply_graphormer_init: bool = False,
             activation_fn: str = "gelu",
 
@@ -82,6 +83,11 @@ class TokenGTGraphEncoder(nn.Module):
             lap_node_id_eig_dropout=lap_node_id_eig_dropout,
         )
 
+        if encoder_normalize_before:
+            self.emb_layer_norm = nn.LayerNorm(self.embedding_dim)
+        else:
+            self.emb_layer_norm = None
+
         enc_layer = nn.TransformerEncoderLayer(
             embedding_dim,  
             num_attention_heads,
@@ -102,17 +108,17 @@ class TokenGTGraphEncoder(nn.Module):
             self,
             batched_data,
     ):
-        x, padding_mask, padded_index = self.graph_feature(batched_data)
 
         # x: B x T x C
+        x, padding_mask, padded_index = self.graph_feature(batched_data)
+
+        if self.emb_layer_norm is not None:
+            x = self.emb_layer_norm(x)
 
         x = self.dropout_module(x)
-
-        # B x T x C -> T x B x C
-        x = x.transpose(0, 1)
         
         x = self._transformer_encoder(x, src_key_padding_mask=padding_mask)
 
-        graph_rep = x[0, :, :]
+        graph_rep = x[:, 0, :]
 
         return x, graph_rep

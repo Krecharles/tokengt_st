@@ -50,11 +50,11 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         self.criterion = nn.L1Loss()
 
     def forward(self, batch):
-        _, graph_emb, attn_dict = self._token_gt(batch)
-        return self.lm(graph_emb).squeeze(), attn_dict
+        _, graph_emb = self._token_gt(batch)
+        return self.lm(graph_emb).squeeze()
 
     def _common_step(self, batch):
-        out, attn_dict = self(batch)
+        out = self(batch)
         loss = self.criterion(out, batch.y)
         return loss
 
