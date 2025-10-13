@@ -15,14 +15,12 @@ class TokenGTGraphEncoderLayer(nn.Module):
     def __init__(
             self,
             embedding_dim: int = 768,
-            ffn_embedding_dim: int = 3072,
-            encoder_layers: int = 12,
+            ffn_embedding_dim: int = 768,
             num_attention_heads: int = 8,
             dropout: float = 0.1,
             attention_dropout: float = 0.1,
             activation_dropout: float = 0.1,
-            drop_path: float = 0.0,
-            activation_fn: str = "relu",
+            activation_fn: str = "gelu",
             init_fn: Callable = None,
             layernorm_style: str = "postnorm",
             return_attention: bool = False,
@@ -35,7 +33,6 @@ class TokenGTGraphEncoderLayer(nn.Module):
         # Initialize parameters
         self.embedding_dim = embedding_dim
         self.ffn_embedding_dim = ffn_embedding_dim
-        self.encoder_layers = encoder_layers
         self.num_attention_heads = num_attention_heads
         self.attention_dropout = attention_dropout
         self.layernorm_style = layernorm_style
@@ -110,13 +107,11 @@ class TokenGTGraphEncoderLayer(nn.Module):
                 attn_mask=self_attn_mask,
             )
             x = self.dropout_module(x)
-            x = self.drop_path1(x)
             x = residual + x
 
             residual = x
             x = self.final_layer_norm(x)
             x = self.feedforward(x)
-            x = self.drop_path2(x)
             x = residual + x
 
         elif self.layernorm_style == "postnorm":

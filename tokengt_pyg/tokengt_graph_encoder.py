@@ -48,8 +48,6 @@ class TokenGTGraphEncoder(nn.Module):
             lap_node_id_sign_flip: bool = False,
             lap_node_id_eig_dropout: float = 0.0,
 
-            stochastic_depth: bool = False,
-
             num_encoder_layers: int = 12,
             embedding_dim: int = 768,
             ffn_embedding_dim: int = 768,
@@ -57,15 +55,10 @@ class TokenGTGraphEncoder(nn.Module):
             dropout: float = 0.1,
             attention_dropout: float = 0.1,
             activation_dropout: float = 0.1,
-            layerdrop: float = 0.0,
             encoder_normalize_before: bool = False,
             layernorm_style: str = "postnorm",
             apply_graphormer_init: bool = False,
             activation_fn: str = "gelu",
-            embed_scale: float = None,
-            freeze_embeddings: bool = False,
-            n_trans_layers_to_freeze: int = 0,
-            traceable: bool = False,
 
             return_attention: bool = False,
 
@@ -73,10 +66,8 @@ class TokenGTGraphEncoder(nn.Module):
 
         super().__init__()
         self.dropout_module = nn.Dropout(dropout)
-        self.layerdrop = layerdrop
         self.embedding_dim = embedding_dim
         self.apply_graphormer_init = apply_graphormer_init
-        self.traceable = traceable
 
         self.graph_feature = GraphFeatureTokenizer(
             num_atoms=num_atoms,
@@ -90,9 +81,6 @@ class TokenGTGraphEncoder(nn.Module):
             lap_node_id_eig_dropout=lap_node_id_eig_dropout,
         )
         
-        self.embed_scale = embed_scale
-
-        self.quant_noise = None
 
         if encoder_normalize_before:
             self.emb_layer_norm = nn.LayerNorm(self.embedding_dim)
@@ -102,25 +90,17 @@ class TokenGTGraphEncoder(nn.Module):
         if layernorm_style == "prenorm":
             self.final_layer_norm = nn.LayerNorm(self.embedding_dim)
 
-        if self.layerdrop > 0.0:
-            self.layers = nn.ModuleList([])
-        else:
-            self.layers = nn.ModuleList([])
-
-        if stochastic_depth:
-            assert layernorm_style == 'prenorm'  # only for residual nets
+        self.layers = nn.ModuleList([])
 
         self.layers.extend(
             [
                 self.build_tokengt_graph_encoder_layer(
                     embedding_dim=self.embedding_dim,
                     ffn_embedding_dim=ffn_embedding_dim,
-                    encoder_layers=num_encoder_layers,
                     num_attention_heads=num_attention_heads,
                     dropout=self.dropout_module.p,
                     attention_dropout=attention_dropout,
                     activation_dropout=activation_dropout,
-                    drop_path=(0.1 * (layer_idx + 1) / num_encoder_layers) if stochastic_depth else 0,
                     activation_fn=activation_fn,
                     layernorm_style=layernorm_style,
                     return_attention=return_attention,
@@ -133,27 +113,14 @@ class TokenGTGraphEncoder(nn.Module):
         if self.apply_graphormer_init:
             self.apply(init_graphormer_params)
 
-        def freeze_module_params(m):
-            if m is not None:
-                for p in m.parameters():
-                    p.requires_grad = False
-
-        if freeze_embeddings:
-            raise NotImplementedError("Freezing embeddings is not implemented yet.")
-
-        for layer in range(n_trans_layers_to_freeze):
-            freeze_module_params(self.layers[layer])
-
     def build_tokengt_graph_encoder_layer(
             self,
             embedding_dim,
             ffn_embedding_dim,
-            encoder_layers,
             num_attention_heads,
             dropout,
             attention_dropout,
             activation_dropout,
-            drop_path,
             activation_fn,
             layernorm_style,
             return_attention,
@@ -161,12 +128,10 @@ class TokenGTGraphEncoder(nn.Module):
         return TokenGTGraphEncoderLayer(
             embedding_dim=embedding_dim,
             ffn_embedding_dim=ffn_embedding_dim,
-            encoder_layers=encoder_layers,
             num_attention_heads=num_attention_heads,
             dropout=dropout,
             attention_dropout=attention_dropout,
             activation_dropout=activation_dropout,
-            drop_path=drop_path,
             activation_fn=activation_fn,
             layernorm_style=layernorm_style,
             return_attention=return_attention
@@ -180,20 +145,12 @@ class TokenGTGraphEncoder(nn.Module):
             token_embeddings: Optional[torch.Tensor] = None,
             attn_mask: Optional[torch.Tensor] = None,
     ):
-        is_tpu = False
-
         if token_embeddings is not None:
             raise NotImplementedError
         else:
             x, padding_mask, padded_index = self.graph_feature(batched_data, perturb)
 
         # x: B x T x C
-
-        if self.embed_scale is not None:
-            x = x * self.embed_scale
-
-        if self.quant_noise is not None:
-            x = self.quant_noise(x)
 
         if self.emb_layer_norm is not None:
             x = self.emb_layer_norm(x)
@@ -226,7 +183,4 @@ class TokenGTGraphEncoder(nn.Module):
         if last_state_only:
             inner_states = [x]
 
-        if self.traceable:
-            return torch.stack(inner_states), graph_rep, attn_dict
-        else:
-            return inner_states, graph_rep, attn_dict
+        return inner_states, graph_rep, attn_dict
