@@ -32,6 +32,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             # < for tokenization
             node_id_mode=node_id_mode,
             d_p=d_p,
+            lap_node_id_eig_dropout=0.2,
             # >
             # <
             num_encoder_layers=num_encoder_layers,
