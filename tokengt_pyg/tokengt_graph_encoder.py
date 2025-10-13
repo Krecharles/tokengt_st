@@ -2,14 +2,11 @@
 Modified from https://github.com/microsoft/Graphormer
 """
 
-from typing import Literal, Optional
+from typing import Literal
 
-import torch
 import torch.nn as nn
 
-from .multihead_attention import MultiheadAttention
 from .tokenizer import GraphFeatureTokenizer
-from .tokengt_graph_encoder_layer import TokenGTGraphEncoderLayer
 
 
 def init_graphormer_params(module):
@@ -30,11 +27,6 @@ def init_graphormer_params(module):
         normal_(module.weight.data)
         if module.padding_idx is not None:
             module.weight.data[module.padding_idx].zero_()
-    if isinstance(module, MultiheadAttention):
-        normal_(module.q_proj.weight.data)
-        normal_(module.k_proj.weight.data)
-        normal_(module.v_proj.weight.data)
-
 
 class TokenGTGraphEncoder(nn.Module):
     def __init__(
