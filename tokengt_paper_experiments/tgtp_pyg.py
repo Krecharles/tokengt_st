@@ -130,11 +130,6 @@ def train(config):
     wandb_logger.experiment.log({"total_parameters": total_params})
     model_name = f"{config['architecture']}_{config['dataset']}_params{total_params}_seed{config['seed']}"
 
-    layer_params = sum(p.numel()
-                       for p in model._token_gt.layers.parameters() if p.requires_grad)
-    print(f"Layer parameters: {layer_params:,}")
-    wandb_logger.experiment.log({"layer_parameters": layer_params})
-
     checkpoint_path = load_checkpoint_path(model_name)
 
     checkpoint_callback = ModelCheckpoint(
@@ -200,7 +195,7 @@ def main():
         project=f"nv_{config['dataset']}",
         entity="krecharles-university-of-oxford",
         config=config,
-        # mode="disabled"
+        mode="disabled"
     )
 
     train(config)

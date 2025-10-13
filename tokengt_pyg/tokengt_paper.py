@@ -34,8 +34,6 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             d_p=d_p,
             # >
             # <
-            stochastic_depth=False,
-
             num_encoder_layers=num_encoder_layers,
             embedding_dim=d,
             ffn_embedding_dim=d,
@@ -43,8 +41,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             dropout=dropout,
             attention_dropout=dropout,
             activation_dropout=dropout,
-            encoder_normalize_before=True,
-            layernorm_style="postnorm",
+            norm_first=True,
             apply_graphormer_init=True,
             activation_fn="gelu",
             # >
