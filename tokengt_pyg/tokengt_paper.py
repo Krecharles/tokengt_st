@@ -43,7 +43,6 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             attention_dropout=dropout,
             activation_dropout=dropout,
             norm_first=True,
-            apply_graphormer_init=True,
             activation_fn="gelu",
             # >
         )

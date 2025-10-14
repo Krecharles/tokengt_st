@@ -8,15 +8,6 @@ import torch.nn.functional as F
 from .orf import gaussian_orthogonal_random_matrix_batched
 
 
-def init_params(module, num_encoder_layers):
-    if isinstance(module, nn.Linear):
-        module.weight.data.normal_(mean=0.0, std=0.02 / math.sqrt(num_encoder_layers))
-        if module.bias is not None:
-            module.bias.data.zero_()
-    if isinstance(module, nn.Embedding):
-        module.weight.data.normal_(mean=0.0, std=0.02)
-
-
 class GraphFeatureTokenizer(nn.Module):
     """
     Compute node and edge features for each node and edge in the graph.
@@ -53,8 +44,6 @@ class GraphFeatureTokenizer(nn.Module):
 
         if node_id_mode == "laplacian":
             self.lap_eig_dropout = nn.Dropout2d(p=lap_node_id_eig_dropout) if lap_node_id_eig_dropout > 0 else None
-        
-        self.apply(lambda module: init_params(module, num_encoder_layers=num_encoder_layers))
 
     @staticmethod
     def get_batch(node_feature, edge_index, edge_feature, node_num, edge_num):

@@ -8,26 +8,6 @@ import torch.nn as nn
 
 from .tokenizer import GraphFeatureTokenizer
 
-
-def init_graphormer_params(module):
-    """
-    Initialize the weights specific to the Graphormer Model.
-    """
-
-    def normal_(data):
-        # with FSDP, module params will be on CUDA, so we cast them back to CPU
-        # so that the RNG is consistent with and without FSDP
-        data.copy_(data.cpu().normal_(mean=0.0, std=0.02).to(data.device))
-
-    if isinstance(module, nn.Linear):
-        normal_(module.weight.data)
-        if module.bias is not None:
-            module.bias.data.zero_()
-    if isinstance(module, nn.Embedding):
-        normal_(module.weight.data)
-        if module.padding_idx is not None:
-            module.weight.data[module.padding_idx].zero_()
-
 class TokenGTGraphEncoder(nn.Module):
     def __init__(
             self,
@@ -49,7 +29,6 @@ class TokenGTGraphEncoder(nn.Module):
             activation_dropout: float = 0.1,
             encoder_normalize_before: bool = True,
             norm_first: bool = False,
-            apply_graphormer_init: bool = False,
             activation_fn: str = "gelu",
 
             return_attention: bool = False,
@@ -61,7 +40,6 @@ class TokenGTGraphEncoder(nn.Module):
         # TODO document this dropout as opposed to attention and activation dropouts
         self.dropout_module = nn.Dropout(dropout)
         self.embedding_dim = embedding_dim
-        self.apply_graphormer_init = apply_graphormer_init
 
         self.graph_feature = GraphFeatureTokenizer(
             num_atoms=num_atoms,
@@ -92,14 +70,9 @@ class TokenGTGraphEncoder(nn.Module):
         )
         self._transformer_encoder = nn.TransformerEncoder(enc_layer, num_encoder_layers)
 
-        # Apply initialization of model params after building the model
-        if self.apply_graphormer_init:
-            self.apply(init_graphormer_params)
+        self.apply(self._init_params)
 
-    def forward(
-            self,
-            batched_data,
-    ):
+    def forward(self, batched_data):
 
         # x: B x T x C
         x, padding_mask, padded_index = self.graph_feature(batched_data)
@@ -108,9 +81,18 @@ class TokenGTGraphEncoder(nn.Module):
             x = self.emb_layer_norm(x)
 
         x = self.dropout_module(x)
-        
         x = self._transformer_encoder(x, src_key_padding_mask=padding_mask)
 
         graph_rep = x[:, 0, :]
-
         return x, graph_rep
+
+    @staticmethod
+    def _init_params(module: nn.Module) -> None:
+        if isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=0.02)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        if isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=0.02)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
