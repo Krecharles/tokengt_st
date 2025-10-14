@@ -190,14 +190,12 @@ class GraphFeatureTokenizer(nn.Module):
             node_data,
             batch,
             ptr,
-            eigvec,
             edge_index,
             edge_data,
         ) = (
             batched_data["x"],
             batched_data["batch"],
             batched_data["ptr"],
-            batched_data["lap_eigvec"],
             batched_data["edge_index"],
             batched_data["edge_attr"],
         )
@@ -225,15 +223,16 @@ class GraphFeatureTokenizer(nn.Module):
                 b, max_n, max_n, device=device, dtype=dtype
             )  # [b, max(n_node), max(n_node)]
             orf_node_id = orf[node_mask]  # [sum(n_node), max(n_node)]
-            if self.orf_node_id_dim > max_n:
-                orf_node_id = F.pad(orf_node_id, (0, self.orf_node_id_dim - max_n), value=float('0'))  # [sum(n_node), Do]
+            if self.d_p > max_n:
+                orf_node_id = F.pad(orf_node_id, (0, self.d_p - max_n), value=float('0'))  # [sum(n_node), Do]
             else:
-                orf_node_id = orf_node_id[..., :self.orf_node_id_dim]  # [sum(n_node), Do]
+                orf_node_id = orf_node_id[..., :self.d_p]  # [sum(n_node), Do]
             orf_node_id = F.normalize(orf_node_id, p=2, dim=1)
             orf_index_embed = self.get_index_embed(orf_node_id, node_mask, padded_index)  # [B, T, 2Do]
             padded_feature = padded_feature + self.node_id_encoder(orf_index_embed)
 
         if self.node_id_mode == "laplacian":
+            eigvec = batched_data["lap_eigvec"]
             if self.lap_eig_dropout is not None:
                 eigvec = self.lap_eig_dropout(eigvec[..., None, None]).view(eigvec.size())
             lap_node_id = self.handle_eigvec(eigvec, node_mask, self.lap_node_id_sign_flip)
