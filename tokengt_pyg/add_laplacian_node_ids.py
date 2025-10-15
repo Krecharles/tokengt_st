@@ -1,4 +1,3 @@
-
 from torch import Tensor
 from torch_geometric.data import Data
 from torch_geometric.data.datapipes import functional_transform
@@ -37,11 +36,13 @@ class AddLaplacianNodeIdentifiers(BaseTransform):
         # Adapt lap_eigvec dimension to d_p
         lap_dim = lap_eigvec.size(-1)
         if self._d_p > lap_dim:
-            lap_eigvec = F.pad(lap_eigvec, (0, self._d_p - lap_dim), value=float('0'))  # [sum(n_node), Dl]
+            lap_eigvec = F.pad(
+                lap_eigvec, (0, self._d_p - lap_dim), value=float("0")
+            )  # [sum(n_node), Dl]
         else:
-            lap_eigvec = lap_eigvec[:, :self._d_p]  # [sum(n_node), Dl]
+            lap_eigvec = lap_eigvec[:, : self._d_p]  # [sum(n_node), Dl]
 
-        data["lap_eigvec"] = lap_eigvec
+        data["node_ids"] = lap_eigvec
         return data
 
     @staticmethod
@@ -63,6 +64,7 @@ def convert_to_single_emb(x, offset: int = 512):
     feature_offset = torch.arange(0, feature_num * offset, offset, dtype=torch.long)
     x = x + feature_offset
     return x
+
 
 class ConvertToSingleEmbTransform(BaseTransform):
     def __init__(self, offset: int = 512):

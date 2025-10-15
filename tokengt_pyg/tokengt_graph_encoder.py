@@ -212,7 +212,11 @@ class TokenGT(nn.Module):
 
         # Place them.
         padded_embbeddings = torch.zeros(
-            batch_size, max_tokens, self.embedding_dim, device=x.device, dtype=x.dtype
+            batch_size,
+            max_tokens,
+            self.embedding_dim,
+            device=x.device,
+            dtype=node_emb.dtype,
         )
         padded_embbeddings[padded_node_mask] = node_emb
         padded_embbeddings[padded_edge_mask] = edge_emb
@@ -230,10 +234,10 @@ class TokenGT(nn.Module):
 
         node token embedding = x_prj + node_ids_prj + type_ids
         """
-        x_prj = self.node_feature_encoder(x)
+        x_prj = self.node_feature_encoder(x).sum(-2)
         node_ids_prj = self.node_id_encoder(torch.concat((node_ids, node_ids), 1))
         total_nodes = x.shape[0]
-        type_ids = self.type_id_encoder(0).expand(total_nodes, -1)
+        type_ids = self.type_id_encoder.weight[0].expand(total_nodes, -1)
 
         node_emb = x_prj + node_ids_prj + type_ids
         return node_emb  # [total_nodes, embedding_dim]
@@ -254,11 +258,11 @@ class TokenGT(nn.Module):
         )
         node_ids_prj = self.node_id_encoder(node_ids_concat)
         total_edges = edge_index.shape[1]
-        type_ids = self.type_id_encoder(1).expand(total_edges, -1)
+        type_ids = self.type_id_encoder.weight[1].expand(total_edges, -1)
 
         edge_emb = node_ids_prj + type_ids
         if edge_attr is not None:
-            edge_emb = edge_emb + self.edge_feature_encoder(edge_attr)
+            edge_emb = edge_emb + self.edge_feature_encoder(edge_attr).sum(-2)
         return edge_emb  # [total_edges, embedding_dim]
 
     @staticmethod

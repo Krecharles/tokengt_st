@@ -1,2 +1,1 @@
-from .tokenizer import GraphFeatureTokenizer
-from .tokengt_graph_encoder import TokenGTGraphEncoder, init_graphormer_params
+from .tokengt_graph_encoder import TokenGT
