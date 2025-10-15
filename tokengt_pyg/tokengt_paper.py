@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 
-from tokengt_pyg import TokenGTGraphEncoder
+from tokengt_pyg import TokenGT
+
 
 class TokenGTPaperGraphRegression(pl.LightningModule):
     def __init__(
@@ -24,7 +25,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self._token_gt = TokenGTGraphEncoder(
+        self._token_gt = TokenGT(
             # <
             num_atoms=num_atoms,
             num_edges=num_edges,
@@ -50,7 +51,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         self.criterion = nn.L1Loss()
 
     def forward(self, batch):
-        _, graph_emb = self._token_gt(batch)
+        node_embs, edge_embs, graph_emb = self._token_gt(batch)
         return self.lm(graph_emb).squeeze()
 
     def _common_step(self, batch):
@@ -59,25 +60,50 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         return loss
 
     def training_step(self, batch, batch_idx):
-        lr = self.optimizers().param_groups[0]['lr']
+        lr = self.optimizers().param_groups[0]["lr"]
         self.logger.experiment.log({"learning_rate": lr})
 
         loss = self._common_step(batch)
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams["batch_size"])
+        self.log(
+            "train_loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=self.hparams["batch_size"],
+        )
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss = self._common_step(batch)
-        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.hparams["batch_size"])
+        self.log(
+            "val_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=self.hparams["batch_size"],
+        )
         return loss
 
     def test_step(self, batch, batch_idx):
         loss = self._common_step(batch)
-        self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.hparams["batch_size"])
+        self.log(
+            "test_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=self.hparams["batch_size"],
+        )
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams["lr"], weight_decay=self.hparams["weight_decay"])
+        optimizer = torch.optim.AdamW(
+            self.parameters(),
+            lr=self.hparams["lr"],
+            weight_decay=self.hparams["weight_decay"],
+        )
         return optimizer
 
         total_steps = self.trainer.estimated_stepping_batches
@@ -107,7 +133,7 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "interval": "step", 
+                "interval": "step",
                 "frequency": 1,
                 "name": "warmup_then_cosine",
             },
