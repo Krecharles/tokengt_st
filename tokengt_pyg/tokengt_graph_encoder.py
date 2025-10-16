@@ -11,8 +11,6 @@ from torch.nn.modules.fold import F
 
 from tokengt_pyg.orf import gaussian_orthogonal_random_matrix_batched
 
-from .tokenizer import GraphFeatureTokenizer
-
 
 class TokenGT(nn.Module):
     r"""The Tokenized Graph Transformer (TokenGT) model from the
@@ -32,7 +30,6 @@ class TokenGT(nn.Module):
     Args:
         num_atoms (int): The number of unique atom (node) types. Note that TokenGT expects the node features to have at most one dimension. Multiple dimensions should be collapsed into a single dimension by summing them up with an appropriate offset.
         num_edges (int): The number of unique edge types. Note that TokenGT expects the edge features to have at most one dimension. Multiple dimensions should be collapsed into a single dimension by summing them up with an appropriate offset.
-        TODO: make sure it also works for no node / edge features.
         node_id_mode (Literal["orf", "laplacian"]): Determines how node structural identifiers are generated.
             "orf": Use random orthogonal features as node identifiers.
             "laplacian": Use Laplacian eigenvectors as node identifiers (to be used in combination with the AddLaplacianNodeIdentifiers transform).
@@ -41,14 +38,11 @@ class TokenGT(nn.Module):
         embedding_dim (int): Dimension of the token embeddings
         ffn_embedding_dim (int): Dimension of the feedforward layers in the Transformer.
         num_attention_heads (int): Number of attention heads in the Transformer.
-        TODO: figure out these dropouts
-        dropout (float, optional): Dropout probability for embeddings and within the Transformer. (Default: 0.1)
-        attention_dropout (float, optional): Dropout probability for attention weights. (Default: 0.1)
-        activation_dropout (float, optional): Dropout probability for activation in the feedforward sublayers. (Default: 0.1)
-        lap_node_id_sign_flip (bool, optional): Whether to apply random sign flipping to Laplacian eigenvectors during training. (Default: False)
+        dropout (float, optional): Dropout probability passed to the Transformer. (Default: 0.1)
         lap_node_id_eig_dropout (float, optional): Dropout probability for Laplacian eigenvectors. (Default: 0.0)
-        encoder_normalize_before (bool, optional): If True, apply LayerNorm before passing tokens to the Transformer encoder. (Default: True)
-        norm_first (bool, optional): If True, apply LayerNorm before attention and feedforward modules (pre-norm). (Default: False)
+        lap_node_id_sign_flip (bool, optional): Whether to apply random sign flipping to Laplacian eigenvectors during training. (Default: False)
+        encoder_normalize_before (bool, optional): If True, apply LayerNorm before passing tokens to the Transformer encoder. (Default: False)
+        norm_first (bool, optional): If True, apply LayerNorm before attention and feedforward modules. (Default: False)
         activation_fn (str, optional): Activation function to use in the feedforward network. (Default: "gelu")
         **transformer_kwargs: Additional arguments for the TransformerEncoderLayer.
     """
@@ -64,11 +58,9 @@ class TokenGT(nn.Module):
         ffn_embedding_dim: int,
         num_attention_heads: int,
         dropout: float = 0.0,
-        attention_dropout: float = 0.0,
-        activation_dropout: float = 0.0,
         lap_node_id_eig_dropout: float = 0.0,
         lap_node_id_sign_flip: bool = False,
-        encoder_normalize_before: bool = True,
+        encoder_normalize_before: bool = False,
         norm_first: bool = False,
         activation_fn: str = "gelu",
         **transformer_kwargs,
@@ -76,13 +68,15 @@ class TokenGT(nn.Module):
 
         super().__init__()
 
+        assert node_id_mode in [
+            "orf",
+            "laplacian",
+        ], "node_id_mode must be either 'orf' or 'laplacian'"
+
         self.embedding_dim = embedding_dim
         self.node_id_mode = node_id_mode
         self.d_p = d_p
         self.lap_node_id_sign_flip = lap_node_id_sign_flip
-
-        # TODO document this dropout as opposed to attention and activation dropouts
-        self.dropout_module = nn.Dropout(dropout)
 
         self.node_feature_encoder = nn.Embedding(
             num_atoms, embedding_dim, padding_idx=0
@@ -95,17 +89,11 @@ class TokenGT(nn.Module):
         self.node_id_encoder = nn.Linear(2 * d_p, embedding_dim, bias=False)
         self.type_id_encoder = nn.Embedding(2, embedding_dim)
 
-        if node_id_mode == "laplacian":
-            self.lap_eig_dropout = (
-                nn.Dropout2d(p=lap_node_id_eig_dropout)
-                if lap_node_id_eig_dropout > 0
-                else None
-            )
+        if node_id_mode == "laplacian" and lap_node_id_eig_dropout > 0:
+            self.lap_eig_dropout = nn.Dropout2d(p=lap_node_id_eig_dropout)
 
         if encoder_normalize_before:
             self.emb_layer_norm = nn.LayerNorm(embedding_dim)
-        else:
-            self.emb_layer_norm = None
 
         enc_layer = nn.TransformerEncoderLayer(
             embedding_dim,
@@ -129,7 +117,11 @@ class TokenGT(nn.Module):
         ptr: Tensor,
         batch: Tensor,
         node_ids: Optional[Tensor] = None,
-    ):
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        r"""
+        Computes the token embeddings for each input node and edge, and passes them through the Transformer encoder. Note that if node_id_mode is "laplacian", node_ids must be provided. They can be generated using the AddLaplacianNodeIdentifiers transform.
+        Returns a tuple of the node and edge token embeddings, and the graph-level embedding.
+        """
 
         n_nodes = ptr[1:] - ptr[:-1]
 
@@ -140,6 +132,23 @@ class TokenGT(nn.Module):
             assert (
                 node_ids.shape[1] == self.d_p
             ), f"node_ids must have {self.d_p} channels"
+
+            if self.lap_eig_dropout is not None:
+                node_ids = self.lap_eig_dropout(node_ids[..., None, None]).view(
+                    node_ids.size()
+                )
+
+            if self.lap_node_id_sign_flip and self.training:
+                # Flip the sign of random eigenvectors, i.e. flip the sign of the
+                # 2nd dimension of node_ids in the same graph.
+                signs = -1 + 2 * torch.randint(
+                    0, 2, (len(ptr) - 1, node_ids.shape[1]), device=node_ids.device
+                )  # [n_graphs, d_p]
+                signs = signs.repeat_interleave(
+                    ptr[1:] - ptr[:-1], dim=0
+                )  # [n_nodes, d_p]
+                node_ids = signs * node_ids
+
         elif self.node_id_mode == "orf":
             b, max_n = len(n_nodes), max(n_nodes)
             orf = gaussian_orthogonal_random_matrix_batched(
@@ -162,7 +171,6 @@ class TokenGT(nn.Module):
         if self.emb_layer_norm is not None:
             token_embs = self.emb_layer_norm(token_embs)
 
-        token_embs = self.dropout_module(token_embs)
         token_embs = self._transformer_encoder(
             token_embs, src_key_padding_mask=src_key_padding_mask
         )
@@ -180,14 +188,7 @@ class TokenGT(nn.Module):
         node_ids: Tensor,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         r"""
-        operates in three steps:
-        1. encode the node or edge features into the token embeddings
-        2. encode type identifiers and add them
-        3. encode node identifiers and add them
-
-        1. compute all node and edge feature projections
-        2. compute node mask and edge mask and use them to place the projected features into the right token embeddings
-        3. returns batched token embeddings and the corresponding padding mask.
+        Computes the node and edge token embeddings, and returns a tuple of the padded embeddings, the padding mask, the node mask, and the edge mask.
         """
 
         n_nodes = ptr[1:] - ptr[:-1]
@@ -196,8 +197,19 @@ class TokenGT(nn.Module):
         n_tokens = n_nodes + n_edges
         max_tokens = n_tokens.max()
 
-        node_emb = self.get_node_token_embeddings(x, node_ids)
-        edge_emb = self.get_edge_token_embeddings(edge_attr, edge_index, node_ids)
+        node_embbeddings = self.get_node_token_embeddings(x, node_ids)
+        edge_embeddings = self.get_edge_token_embeddings(
+            edge_attr, edge_index, node_ids
+        )
+
+        # Pad the embeddings to match the sample with the most tokens in the batch.
+        padded_embbeddings = torch.zeros(
+            batch_size,
+            max_tokens,
+            self.embedding_dim,
+            device=x.device,
+            dtype=node_embbeddings.dtype,
+        )
 
         # Compute node and edge token positions in the padded embeddings.
         token_pos = (
@@ -210,18 +222,12 @@ class TokenGT(nn.Module):
             token_pos >= n_nodes.unsqueeze(1), token_pos < n_tokens.unsqueeze(1)
         )
 
-        # Place them.
-        padded_embbeddings = torch.zeros(
-            batch_size,
-            max_tokens,
-            self.embedding_dim,
-            device=x.device,
-            dtype=node_emb.dtype,
-        )
-        padded_embbeddings[padded_node_mask] = node_emb
-        padded_embbeddings[padded_edge_mask] = edge_emb
+        # Place the node and edge embeddings in the padded embeddings.
+        padded_embbeddings[padded_node_mask] = node_embbeddings
+        padded_embbeddings[padded_edge_mask] = edge_embeddings
 
         src_key_padding_mask = ~torch.less(token_pos, n_tokens.unsqueeze(1))
+
         return (
             padded_embbeddings,
             src_key_padding_mask,

@@ -26,26 +26,20 @@ class TokenGTPaperGraphRegression(pl.LightningModule):
         self.save_hyperparameters()
 
         self._token_gt = TokenGT(
-            # <
             num_atoms=num_atoms,
             num_edges=num_edges,
-            # >
-            # < for tokenization
             node_id_mode=node_id_mode,
             d_p=d_p,
-            lap_node_id_eig_dropout=0.2,
-            # >
-            # <
             num_encoder_layers=num_encoder_layers,
             embedding_dim=d,
             ffn_embedding_dim=d,
             num_attention_heads=num_heads,
             dropout=dropout,
-            attention_dropout=dropout,
-            activation_dropout=dropout,
+            lap_node_id_eig_dropout=0.2,
+            lap_node_id_sign_flip=True,
+            encoder_normalize_before=True,
             norm_first=True,
             activation_fn="gelu",
-            # >
         )
         self.lm = nn.Linear(d, 1)
         self.criterion = nn.L1Loss()
