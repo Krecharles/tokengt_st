@@ -1,5 +1,5 @@
 """
-Modified from https://github.com/microsoft/Graphormer
+This implementation is based on both the original paper's codebase <https://github.com/jw9730/tokengt> and Michail Melonas' implementation <https://github.com/pyg-team/pytorch_geometric/pull/9834>.
 """
 
 from typing import Literal, Optional, Tuple
@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from torch.nn.modules.fold import F
 
-from tokengt_pyg.orf import gaussian_orthogonal_random_matrix_batched
+from torch_geometric.nn.attention.performer import orthogonal_matrix
 
 
 class TokenGT(nn.Module):
@@ -21,11 +21,9 @@ class TokenGT(nn.Module):
     tokens, 2. augmenting said tokens with structural information (node and
     type identifiers), and 3. feeding tokens into a standard multi-head
     self-attention Transformer model. The Transformer retrieves structural information
-    based on (near) orthogonal vectors called node identifiers. There are two ways to generate node identifiers:
+    based on orthogonal vectors called node identifiers. There are two ways to generate node identifiers:
     - "orf": Use random orthogonal features as node identifiers. These are generated anew for every pass to ensure randomization.
     - "laplacian": Use Laplacian eigenvectors as node identifiers (to be used in combination with the AddLaplacianNodeIdentifiers transform).
-
-    This implementation is based on both the original paper's codebase <https://github.com/jw9730/tokengt> and Michail Melonas' implementation <https://github.com/pyg-team/pytorch_geometric/pull/9834>.
 
     Args:
         num_atoms (int): The number of unique atom (node) types. Note that TokenGT expects the node features to have at most one dimension. Multiple dimensions should be collapsed into a single dimension by summing them up with an appropriate offset.
@@ -150,19 +148,16 @@ class TokenGT(nn.Module):
                 node_ids = signs * node_ids
 
         elif self.node_id_mode == "orf":
-            b, max_n = len(n_nodes), max(n_nodes)
-            orf = gaussian_orthogonal_random_matrix_batched(
-                b, max_n, max_n, device=x.device
-            )  # [b, max(n_node), max(n_node)]
-            # TODO fix this
-            orf_node_id = orf[node_mask]  # [sum(n_node), max(n_node)]
-            if self.d_p > max_n:
-                orf_node_id = F.pad(
-                    orf_node_id, (0, self.d_p - max_n), value=float("0")
-                )  # [sum(n_node), Do]
-            else:
-                orf_node_id = orf_node_id[..., : self.d_p]  # [sum(n_node), Do]
-            node_ids = F.normalize(orf_node_id, p=2, dim=1)
+            orfs = []
+            for i in range(len(n_nodes)):
+                orf = orthogonal_matrix(n_nodes[i], n_nodes[i])
+                if n_nodes[i] < self.d_p:
+                    orf = F.pad(orf, (0, self.d_p - n_nodes[i]), value=0.0)
+                else:
+                    orf = orf[:, : self.d_p]
+                orf = F.normalize(orf, p=2, dim=1)
+                orfs.append(orf)
+            node_ids = torch.cat(orfs, dim=0)
 
         token_embs, src_key_padding_mask, node_mask, edge_mask = (
             self.get_token_embeddings(x, edge_index, edge_attr, ptr, batch, node_ids)

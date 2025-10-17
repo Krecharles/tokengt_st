@@ -42,6 +42,8 @@ class AddLaplacianNodeIdentifiers(BaseTransform):
         else:
             lap_eigvec = lap_eigvec[:, : self._d_p]  # [sum(n_node), Dl]
 
+        F.normalize(lap_eigvec, p=2, dim=1)
+
         data["node_ids"] = lap_eigvec
         return data
 
